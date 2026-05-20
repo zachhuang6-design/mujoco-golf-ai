@@ -29,14 +29,14 @@ xml = """
     <!-- Put the ball closer and slightly larger for debugging -->
     <body name="ball" pos="0.45 0 0.08">
       <joint type="free"/>
-      <geom name="golf_ball" type="sphere" size="0.08" mass="0.045" rgba="1 1 1 1"/>
+      <geom name="golf_ball" type="sphere" size="0.12" mass="0.045" rgba="1 1 1 1"/>
     </body>
   </worldbody>
 
   <actuator>
-    <motor joint="shoulder" gear="2"/>
-    <motor joint="elbow" gear="2"/>
-    <motor joint="wrist" gear="1.5"/>
+    <motor joint="shoulder" gear="8"/>
+    <motor joint="elbow" gear="6"/>
+    <motor joint="wrist" gear="5"/>
   </actuator>
 </mujoco>
 """
@@ -62,21 +62,21 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
     while viewer.is_running() and step < 1200:
         # Phase 1: hold / slight backswing
         if step < 200:
-            data.ctrl[0] = -0.5   # shoulder
-            data.ctrl[1] = 0.2    # elbow
-            data.ctrl[2] = 0.1    # wrist
+            data.ctrl[0] = -1.0   # shoulder
+            data.ctrl[1] = 0.5    # elbow
+            data.ctrl[2] = 0.3    # wrist
 
         # Phase 2: main downswing
         elif step < 520:
-            data.ctrl[0] = 2.8
-            data.ctrl[1] = -1.2
-            data.ctrl[2] = -0.4
+            data.ctrl[0] = 5.0
+            data.ctrl[1] = -2.0
+            data.ctrl[2] = -1.0
 
         # Phase 3: wrist release / club snap
         elif step < 760:
-            data.ctrl[0] = 1.2
-            data.ctrl[1] = -0.5
-            data.ctrl[2] = 2.5
+            data.ctrl[0] = 2.5
+            data.ctrl[1] = -1.0
+            data.ctrl[2] = 5.0
 
         # Phase 4: follow-through
         else:
