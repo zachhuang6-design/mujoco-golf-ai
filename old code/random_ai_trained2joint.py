@@ -337,7 +337,7 @@ print("  shoulder:", -MAX_SHOULDER_TORQUE, "to", MAX_SHOULDER_TORQUE)
 print("  wrist:", -MAX_WRIST_TORQUE, "to", MAX_WRIST_TORQUE)
 print()
 
-while True:
+while trial < NUM_TRIALS:
     candidate = make_candidate()
     reward = simulate_swing(candidate)
 
@@ -354,7 +354,6 @@ while True:
         print("Improvement:", round(best_reward - hardcoded_reward, 4))
         print_candidate(best_candidate)
         print_code_to_paste(best_candidate)
-        break
 
     if trial % 100 == 0:
         print(
@@ -365,3 +364,11 @@ while True:
             "| Best random so far:",
             round(best_reward, 4),
         )
+
+print()
+print("============================================================")
+print("Training complete!")
+print("============================================================")
+print("Total trials:", NUM_TRIALS)
+print("Final best reward:", round(best_reward, 4))
+print("Improvement over hardcoded:", round(best_reward - hardcoded_reward, 4))
