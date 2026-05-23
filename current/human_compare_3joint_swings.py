@@ -1,3 +1,4 @@
+import argparse
 import time
 
 import mujoco
@@ -5,6 +6,8 @@ import mujoco.viewer
 
 from golf_3joint_common import (
     BASELINE_CANDIDATE,
+    BALL_CONTACT_ATTRS,
+    CLUB_PRESETS,
     MAX_ELBOW_CTRL,
     MAX_SHOULDER_CTRL,
     MAX_WRIST_CTRL,
@@ -14,9 +17,9 @@ from golf_3joint_common import (
     ball_x,
     ball_z,
     club_len,
+    get_club_preset,
     forearm_len,
-    head_mass,
-    shaft_mass,
+    lofted_club_head_geom,
     shoulder_height,
     tee_half_height,
     tee_x,
@@ -41,7 +44,15 @@ TRAINED_CANDIDATE = {
 }
 
 
-def arm_xml(prefix, y, color, tip_color):
+def parse_args():
+    parser = argparse.ArgumentParser(description="Compare baseline and trained 3-joint swings.")
+    parser.add_argument("--club", choices=sorted(CLUB_PRESETS), default="7iron")
+    return parser.parse_args()
+
+
+def arm_xml(prefix, y, color, tip_color, club_name):
+    preset = get_club_preset(club_name)
+    club_head_xml = lofted_club_head_geom(f"{prefix}_club_head_geom", club_name)
     return f"""
     <body name="{prefix}_arm" pos="0 {y:.2f} {shoulder_height}">
       <joint name="{prefix}_shoulder" type="hinge" axis="0 1 0" range="-160 160" damping="0.8" armature="0.04"/>
@@ -53,10 +64,10 @@ def arm_xml(prefix, y, color, tip_color):
 
         <body name="{prefix}_club" pos="0 0 -{forearm_len:.6f}">
           <joint name="{prefix}_wrist" type="hinge" axis="0 1 0" range="-100 100" damping="0.45" armature="0.02"/>
-          <inertial mass="{shaft_mass + head_mass}" pos="0 0 -{club_len / 2:.6f}" diaginertia="0.03 0.03 0.0001"/>
-          <geom name="{prefix}_club_shaft_geom" type="capsule" fromto="0 0 0 0 0 -{club_len:.6f}" size="0.012" rgba="0.1 0.1 0.1 1"/>
-          <geom name="{prefix}_club_head_geom" type="box" pos="0 0 -{club_len:.6f}" size="0.04 0.02 0.02" rgba="0.2 0.2 0.2 1"/>
-          <site name="{prefix}_club_tip" pos="0 0 -{club_len:.6f}" size="0.04" rgba="{tip_color}"/>
+          <geom name="{prefix}_club_shaft_geom" type="capsule" fromto="0 0 0 0 0 -{club_len:.6f}" size="0.012" mass="{preset["shaft_mass"]:.6f}" rgba="0.1 0.1 0.1 1"/>
+          {club_head_xml}
+          <site name="{prefix}_club_tip" pos="0 0 -{club_len:.6f}" size="0.008" rgba="{tip_color}"/>
+          <site name="{prefix}_club_face_center" pos="0 0 -{club_len:.6f}" size="0.012" rgba="0 0.6 1 0.7"/>
         </body>
       </body>
     </body>
@@ -67,20 +78,20 @@ def arm_xml(prefix, y, color, tip_color):
 
     <body name="{prefix}_ball" pos="{ball_x:.6f} {y:.2f} {ball_z:.6f}">
       <joint type="free"/>
-      <geom name="{prefix}_ball_geom" type="sphere" size="{ball_radius:.6f}" mass="{ball_mass}" rgba="1 1 1 1"/>
+      <geom name="{prefix}_ball_geom" type="sphere" size="{ball_radius:.6f}" mass="{ball_mass}" {BALL_CONTACT_ATTRS} rgba="1 1 1 1"/>
     </body>
 """
 
 
-def build_compare_xml():
+def build_compare_xml(club_name):
     return f"""
 <mujoco>
   <option timestep="0.002" gravity="0 0 -9.81"/>
 
   <worldbody>
     <geom name="floor" type="plane" pos="0 0 0.235" size="8 8 0.1" rgba="0.8 0.9 0.8 1"/>
-    {arm_xml("baseline", 0.20, "0.3 0.3 0.9 1", "1 0 0 1")}
-    {arm_xml("trained", -0.20, "0.9 0.3 0.3 1", "0 1 0 1")}
+    {arm_xml("baseline", 0.20, "0.3 0.3 0.9 1", "1 0 0 0.45", club_name)}
+    {arm_xml("trained", -0.20, "0.9 0.3 0.3 1", "0 1 0 0.45", club_name)}
   </worldbody>
 
   <actuator>
@@ -95,17 +106,33 @@ def build_compare_xml():
 """
 
 
-model = mujoco.MjModel.from_xml_string(build_compare_xml())
-data = mujoco.MjData(model)
-
-baseline_ball_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "baseline_ball")
-trained_ball_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "trained_ball")
-
-data.qpos[:] = model.qpos0
-mujoco.mj_forward(model, data)
+def make_compare_model(club_name):
+    return mujoco.MjModel.from_xml_string(build_compare_xml(club_name))
 
 
 if __name__ == "__main__":
+    args = parse_args()
+    preset = get_club_preset(args.club)
+    print(
+        "Selected club:",
+        preset["label"],
+        "loft_deg",
+        preset["loft_deg"],
+        "shaft_mass",
+        preset["shaft_mass"],
+        "head_mass",
+        preset["head_mass"],
+    )
+
+    model = make_compare_model(args.club)
+    data = mujoco.MjData(model)
+
+    baseline_ball_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "baseline_ball")
+    trained_ball_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "trained_ball")
+
+    data.qpos[:] = model.qpos0
+    mujoco.mj_forward(model, data)
+
     with mujoco.viewer.launch_passive(model, data) as viewer:
         step = 0
 

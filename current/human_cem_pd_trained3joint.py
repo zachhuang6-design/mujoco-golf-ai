@@ -7,11 +7,15 @@ import mujoco
 
 import golf_3joint_common
 from golf_3joint_common import (
+    CLUB_PRESETS,
     EPISODE_STEPS,
     MAX_ELBOW_CTRL,
     MAX_SHOULDER_CTRL,
     MAX_WRIST_CTRL,
+    get_club_launch_profile,
+    get_club_preset,
     make_single_arm_model,
+    normalize_club_name,
 )
 
 
@@ -208,6 +212,10 @@ def angle_score(angle, target, tolerance):
     return max(0.0, 1.0 - abs(angle - target) / tolerance)
 
 
+def value_score(value, target, tolerance):
+    return max(0.0, 1.0 - abs(value - target) / tolerance)
+
+
 def joint_absolute_angles(data):
     shoulder = data.qpos[0]
     forearm = data.qpos[0] + data.qpos[1]
@@ -245,24 +253,47 @@ def top_tracking_score(data, candidate):
     return score / 3.0
 
 
-def print_startup_diagnostics(model):
+def print_startup_diagnostics(model, club_name):
     data = mujoco.MjData(model)
     data.qpos[:] = model.qpos0
     mujoco.mj_forward(model, data)
 
+    preset = get_club_preset(club_name)
+    launch_profile = get_club_launch_profile(club_name)
     ball_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "ball")
     club_tip_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "club_tip")
     ball_pos = data.xpos[ball_id]
     tip_pos = data.site_xpos[club_tip_id]
     print("Loaded shared file:", golf_3joint_common.__file__)
+    print(
+        "Selected club:",
+        preset["label"],
+        "loft_deg",
+        preset["loft_deg"],
+        "shaft_mass",
+        preset["shaft_mass"],
+        "head_mass",
+        preset["head_mass"],
+    )
     print("Configured ball_x:", golf_3joint_common.ball_x)
     print("Initial ball position:", [round(float(v), 4) for v in ball_pos])
     print("Initial club tip position:", [round(float(v), 4) for v in tip_pos])
     print("Initial tip-to-ball distance:", round(math.dist(tip_pos, ball_pos), 4))
     print("Initial contacts:", data.ncon)
+    print(
+        "Launch profile:",
+        launch_profile["label"],
+        "target_vz",
+        launch_profile["target_vertical_speed"],
+        "vz_tolerance",
+        launch_profile["vertical_speed_tolerance"],
+    )
 
 
-def simulate_pd_swing(model, candidate, require_hit=True):
+def simulate_pd_swing(model, candidate, require_hit=True, launch_profile=None):
+    if launch_profile is None:
+        launch_profile = get_club_launch_profile()
+
     data = mujoco.MjData(model)
     data.qpos[:] = model.qpos0
     mujoco.mj_forward(model, data)
@@ -359,6 +390,17 @@ def simulate_pd_swing(model, candidate, require_hit=True):
 
     distance = max_ball_x - initial_ball_x
     height_gain = max(0.0, max_ball_z - initial_ball_z)
+    launch_score = value_score(
+        post_impact_max_ball_vz,
+        launch_profile["target_vertical_speed"],
+        launch_profile["vertical_speed_tolerance"],
+    )
+    excess_vertical_speed = max(
+        0.0,
+        post_impact_max_ball_vz
+        - launch_profile["target_vertical_speed"]
+        - launch_profile["vertical_speed_tolerance"],
+    )
     sequence_score = 0.0
     if candidate["elbow_lag"] >= 0 and candidate["wrist_lag"] > candidate["elbow_lag"]:
         sequence_score += 1.0
@@ -367,14 +409,16 @@ def simulate_pd_swing(model, candidate, require_hit=True):
     sequence_score += impact_line_score
 
     reward = (
-        distance * 55.0
-        + height_gain * 260.0
-        + max(0.0, post_impact_max_ball_vx) * 4.0
-        + max(0.0, post_impact_max_ball_vz) * 35.0
+        distance * launch_profile["distance_weight"]
+        + height_gain * launch_profile["height_weight"]
+        + max(0.0, post_impact_max_ball_vx) * launch_profile["forward_speed_weight"]
+        + max(0.0, post_impact_max_ball_vz) * launch_profile["vertical_speed_weight"]
+        + launch_score * launch_profile["launch_score_weight"]
         + top_score_sample * 500.0
         + top_tracking_sample * 350.0
         + impact_line_score * 60.0
         + sequence_score * 55.0
+        - excess_vertical_speed * launch_profile["excess_vertical_speed_penalty"]
         - total_ctrl_energy * 0.00002
     )
     if require_hit and not valid_impact:
@@ -400,6 +444,7 @@ def simulate_pd_swing(model, candidate, require_hit=True):
         "post_impact_max_ball_vx": post_impact_max_ball_vx,
         "post_impact_max_ball_vz": post_impact_max_ball_vz,
         "post_impact_distance": post_impact_distance,
+        "launch_score": launch_score,
         "sequence_score": sequence_score,
         "top_score": top_score_sample,
         "top_tracking_score": top_tracking_sample,
@@ -458,6 +503,8 @@ def print_result(prefix, result):
         round(result["top_tracking_score"], 3),
         "line",
         round(result["impact_line_score"], 3),
+        "launch",
+        round(result["launch_score"], 3),
     )
 
 
@@ -477,10 +524,12 @@ def print_pd_candidate(candidate):
     print("}")
 
 
-def train(generations, population, elite_count, seed=None, smoothing=0.7):
+def train(generations, population, elite_count, seed=None, smoothing=0.7, club_name="7iron"):
     rng = random.Random(seed)
-    model = make_single_arm_model()
-    print_startup_diagnostics(model)
+    club_name = normalize_club_name(club_name)
+    model = make_single_arm_model(club_name)
+    launch_profile = get_club_launch_profile(club_name)
+    print_startup_diagnostics(model, club_name)
 
     mean_vector = list(INITIAL_MEAN)
     std_vector = list(INITIAL_STD)
@@ -495,7 +544,12 @@ def train(generations, population, elite_count, seed=None, smoothing=0.7):
         for _ in range(population):
             vector = sample_vector(rng, mean_vector, std_vector)
             candidate = vector_to_candidate(vector)
-            result = simulate_pd_swing(model, candidate, require_hit=True)
+            result = simulate_pd_swing(
+                model,
+                candidate,
+                require_hit=True,
+                launch_profile=launch_profile,
+            )
             scored.append((result["reward"], vector, candidate, result))
 
             if best_result is None or result["reward"] > best_result["reward"]:
@@ -535,6 +589,7 @@ def train(generations, population, elite_count, seed=None, smoothing=0.7):
     print("Top pose score:", round(final_result["top_score"], 4))
     print("Top tracking score:", round(final_result["top_tracking_score"], 4))
     print("Impact line score:", round(final_result["impact_line_score"], 4))
+    print("Launch score:", round(final_result["launch_score"], 4))
     print("Sequence score:", round(final_result["sequence_score"], 4))
     print("Active downswing min tip-to-ball:", round(final_result["active_min_tip_to_ball"], 4))
     print("Active downswing max club vx:", round(final_result["active_max_club_vx"], 4))
@@ -548,6 +603,7 @@ def parse_args():
     parser.add_argument("--elite-count", type=int, default=16)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--smoothing", type=float, default=0.7)
+    parser.add_argument("--club", choices=sorted(CLUB_PRESETS), default="7iron")
     return parser.parse_args()
 
 
@@ -559,4 +615,5 @@ if __name__ == "__main__":
         elite_count=args.elite_count,
         seed=args.seed,
         smoothing=args.smoothing,
+        club_name=args.club,
     )

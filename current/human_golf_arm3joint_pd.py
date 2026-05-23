@@ -1,23 +1,24 @@
+import argparse
 import time
 
 import mujoco
 import mujoco.viewer
 
-from golf_3joint_common import make_single_arm_model
+from golf_3joint_common import CLUB_PRESETS, get_club_preset, make_single_arm_model
 from human_cem_pd_trained3joint import apply_pd_controls, target_angles
 
 
 PD_SWING_CANDIDATE = {
-    "top_step": 232,
-    "top_hold": 117,
-    "down_start_step": 349,
-    "impact_step": 612,
-    "finish_step": 672,
-    "elbow_lag": 47,
-    "wrist_lag": 68,
+    "top_step": 255,
+    "top_hold": 98,
+    "down_start_step": 353,
+    "impact_step": 626,
+    "finish_step": 686,
+    "elbow_lag": 46,
+    "wrist_lag": 51,
     "top_pose": (1.5708, 1.5708, 1.5708),
-    "impact_pose": (-0.3934, -0.4500, -0.3582),
-    "finish_pose": (-0.9138, -0.5738, -0.4341),
+    "impact_pose": (-0.2108, -0.4423, -0.4478),
+    "finish_pose": (-0.5704, -1.1036, -0.9985),
 }
 
 MIN_FORWARD_CLUB_SPEED = 0.50
@@ -25,19 +26,13 @@ MIN_POST_IMPACT_DISTANCE = 0.03
 POST_IMPACT_WINDOW_STEPS = 20
 
 
-model = make_single_arm_model()
-data = mujoco.MjData(model)
-
-ball_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "ball")
-ball_geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "golf_ball")
-club_head_geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "club_head_geom")
-club_tip_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "club_tip")
-
-data.qpos[:] = model.qpos0
-mujoco.mj_forward(model, data)
+def parse_args():
+    parser = argparse.ArgumentParser(description="Replay a PD 3-joint golf swing.")
+    parser.add_argument("--club", choices=sorted(CLUB_PRESETS), default="7iron")
+    return parser.parse_args()
 
 
-def club_hit_ball():
+def club_hit_ball(data, club_head_geom_id, ball_geom_id):
     for i in range(data.ncon):
         contact = data.contact[i]
         if {contact.geom1, contact.geom2} == {club_head_geom_id, ball_geom_id}:
@@ -46,6 +41,30 @@ def club_hit_ball():
 
 
 if __name__ == "__main__":
+    args = parse_args()
+    preset = get_club_preset(args.club)
+    print(
+        "Selected club:",
+        preset["label"],
+        "loft_deg",
+        preset["loft_deg"],
+        "shaft_mass",
+        preset["shaft_mass"],
+        "head_mass",
+        preset["head_mass"],
+    )
+
+    model = make_single_arm_model(args.club)
+    data = mujoco.MjData(model)
+
+    ball_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "ball")
+    ball_geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "golf_ball")
+    club_head_geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "club_head_geom")
+    club_tip_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "club_tip")
+
+    data.qpos[:] = model.qpos0
+    mujoco.mj_forward(model, data)
+
     with mujoco.viewer.launch_passive(model, data) as viewer:
         step = 0
         first_hit_step = None
@@ -66,7 +85,7 @@ if __name__ == "__main__":
             club_velocity = (tip_pos - previous_tip_pos) / model.opt.timestep
             ball_velocity = (ball_pos - previous_ball_pos) / model.opt.timestep
 
-            if club_hit_ball() and first_hit_step is None:
+            if club_hit_ball(data, club_head_geom_id, ball_geom_id) and first_hit_step is None:
                 first_hit_step = step
                 impact_ball_x = ball_pos[0]
                 impact_club_vx = club_velocity[0]

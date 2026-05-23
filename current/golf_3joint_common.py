@@ -1,4 +1,5 @@
 import mujoco
+import math
 
 
 INCH = 0.0254
@@ -7,9 +8,81 @@ upper_arm_len = 13 * INCH
 forearm_len = 13 * INCH
 club_len = 36 * INCH
 ball_radius = 0.84 * INCH
-shaft_mass = 0.100
-head_mass = 0.270
 ball_mass = 0.046
+
+# Stiffer contacts make the strike behave less like a soft bump. The solref
+# time constant is kept at 2x the timestep so MuJoCo can solve it stably.
+CONTACT_SOLREF = "0.004 1"
+CONTACT_SOLIMP = "0.99 0.995 0.001"
+CLUB_CONTACT_ATTRS = (
+    f'solref="{CONTACT_SOLREF}" solimp="{CONTACT_SOLIMP}" '
+    'condim="4" friction="0.8 0.02 0.001"'
+)
+BALL_CONTACT_ATTRS = (
+    f'solref="{CONTACT_SOLREF}" solimp="{CONTACT_SOLIMP}" '
+    'condim="4" friction="0.45 0.01 0.001"'
+)
+
+CLUB_PRESETS = {
+    "driver": {
+        "label": "Driver",
+        "loft_deg": 10.0,
+        "shaft_mass": 0.060,
+        "head_mass": 0.200,
+    },
+    "7iron": {
+        "label": "7-iron",
+        "loft_deg": 30.0,
+        "shaft_mass": 0.100,
+        "head_mass": 0.270,
+    },
+    "wedge": {
+        "label": "Wedge",
+        "loft_deg": 50.0,
+        "shaft_mass": 0.100,
+        "head_mass": 0.300,
+    },
+}
+
+DEFAULT_CLUB_NAME = "7iron"
+shaft_mass = CLUB_PRESETS[DEFAULT_CLUB_NAME]["shaft_mass"]
+head_mass = CLUB_PRESETS[DEFAULT_CLUB_NAME]["head_mass"]
+
+CLUB_LAUNCH_PROFILES = {
+    "driver": {
+        "label": "low launch / maximum forward speed",
+        "distance_weight": 72.0,
+        "height_weight": 70.0,
+        "forward_speed_weight": 8.0,
+        "vertical_speed_weight": 8.0,
+        "target_vertical_speed": 0.55,
+        "vertical_speed_tolerance": 0.75,
+        "excess_vertical_speed_penalty": 90.0,
+        "launch_score_weight": 180.0,
+    },
+    "7iron": {
+        "label": "balanced launch / carry",
+        "distance_weight": 55.0,
+        "height_weight": 260.0,
+        "forward_speed_weight": 4.0,
+        "vertical_speed_weight": 30.0,
+        "target_vertical_speed": 1.10,
+        "vertical_speed_tolerance": 1.10,
+        "excess_vertical_speed_penalty": 35.0,
+        "launch_score_weight": 150.0,
+    },
+    "wedge": {
+        "label": "high launch / height",
+        "distance_weight": 34.0,
+        "height_weight": 520.0,
+        "forward_speed_weight": 2.5,
+        "vertical_speed_weight": 58.0,
+        "target_vertical_speed": 2.30,
+        "vertical_speed_tolerance": 1.35,
+        "excess_vertical_speed_penalty": 12.0,
+        "launch_score_weight": 220.0,
+    },
+}
 
 shoulder_height = 2.05
 ball_x = 0.14
@@ -46,7 +119,57 @@ def clip(value, min_value, max_value):
     return max(min_value, min(max_value, value))
 
 
-def build_single_arm_xml():
+def normalize_club_name(club_name):
+    normalized = club_name.lower().replace("-", "").replace("_", "").replace(" ", "")
+    aliases = {
+        "driver": "driver",
+        "7iron": "7iron",
+        "seveniron": "7iron",
+        "wedge": "wedge",
+    }
+    if normalized not in aliases:
+        available = ", ".join(CLUB_PRESETS)
+        raise ValueError(f"Unknown club '{club_name}'. Available clubs: {available}")
+    return aliases[normalized]
+
+
+def get_club_preset(club_name=DEFAULT_CLUB_NAME):
+    return CLUB_PRESETS[normalize_club_name(club_name)]
+
+
+def get_club_launch_profile(club_name=DEFAULT_CLUB_NAME):
+    return CLUB_LAUNCH_PROFILES[normalize_club_name(club_name)]
+
+
+def lofted_club_head_geom(name, club_name=DEFAULT_CLUB_NAME, rgba="0.2 0.2 0.2 1"):
+    preset = get_club_preset(club_name)
+    loft = math.radians(preset["loft_deg"])
+    half_thickness = 0.018
+    half_width = 0.050
+    half_height = 0.032
+
+    # The local +x face points toward the ball. Rotating about -Y gives that
+    # face an upward normal, which is the 2D swing-plane equivalent of loft.
+    quat_w = math.cos(-loft / 2.0)
+    quat_y = math.sin(-loft / 2.0)
+    normal_x = math.cos(loft)
+    normal_z = math.sin(loft)
+    center_x = -half_thickness * normal_x
+    center_z = -club_len - half_thickness * normal_z
+
+    return (
+        f'<geom name="{name}" type="box" '
+        f'pos="{center_x:.6f} 0 {center_z:.6f}" '
+        f'quat="{quat_w:.6f} 0 {quat_y:.6f} 0" '
+        f'size="{half_thickness:.6f} {half_width:.6f} {half_height:.6f}" '
+        f'{CLUB_CONTACT_ATTRS} '
+        f'mass="{preset["head_mass"]:.6f}" rgba="{rgba}"/>'
+    )
+
+
+def build_single_arm_xml(club_name=DEFAULT_CLUB_NAME):
+    preset = get_club_preset(club_name)
+    club_head_xml = lofted_club_head_geom("club_head_geom", club_name)
     return f"""
 <mujoco>
   <option timestep="0.002" gravity="0 0 -9.81"/>
@@ -64,9 +187,10 @@ def build_single_arm_xml():
 
         <body name="club" pos="0 0 -{forearm_len:.6f}">
           <joint name="wrist" type="hinge" axis="0 1 0" range="-100 100" damping="0.45" armature="0.02"/>
-          <geom name="club_shaft_geom" type="capsule" fromto="0 0 0 0 0 -{club_len:.6f}" size="0.012" mass="{shaft_mass}" rgba="0.1 0.1 0.1 1"/>
-          <geom name="club_head_geom" type="box" pos="0 0 -{club_len:.6f}" size="0.04 0.02 0.02" mass="{head_mass}" rgba="0.2 0.2 0.2 1"/>
-          <site name="club_tip" pos="0 0 -{club_len:.6f}" size="0.04" rgba="1 0 0 1"/>
+          <geom name="club_shaft_geom" type="capsule" fromto="0 0 0 0 0 -{club_len:.6f}" size="0.012" mass="{preset["shaft_mass"]:.6f}" rgba="0.1 0.1 0.1 1"/>
+          {club_head_xml}
+          <site name="club_tip" pos="0 0 -{club_len:.6f}" size="0.008" rgba="1 0 0 0.45"/>
+          <site name="club_face_center" pos="0 0 -{club_len:.6f}" size="0.012" rgba="0 0.6 1 0.7"/>
         </body>
       </body>
     </body>
@@ -77,7 +201,7 @@ def build_single_arm_xml():
 
     <body name="ball" pos="{ball_x:.6f} 0 {ball_z:.6f}">
       <joint type="free"/>
-      <geom name="golf_ball" type="sphere" size="{ball_radius:.6f}" mass="{ball_mass}" rgba="1 1 1 1"/>
+      <geom name="golf_ball" type="sphere" size="{ball_radius:.6f}" mass="{ball_mass}" {BALL_CONTACT_ATTRS} rgba="1 1 1 1"/>
     </body>
   </worldbody>
 
@@ -90,8 +214,8 @@ def build_single_arm_xml():
 """
 
 
-def make_single_arm_model():
-    return mujoco.MjModel.from_xml_string(build_single_arm_xml())
+def make_single_arm_model(club_name=DEFAULT_CLUB_NAME):
+    return mujoco.MjModel.from_xml_string(build_single_arm_xml(club_name))
 
 
 def controls_for_step(candidate, step):
