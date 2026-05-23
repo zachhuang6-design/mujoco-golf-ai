@@ -14,6 +14,11 @@ ball_mass = 0.046
 shoulder_height = 2.05
 ball_x = 0.14
 tee_x = ball_x
+tee_center_z = 0.36
+tee_half_height = 0.08
+ball_tee_raise = 0.02
+tee_z = tee_center_z + ball_tee_raise
+ball_z = tee_z + tee_half_height + ball_radius
 
 MAX_SHOULDER_CTRL = 10.0
 MAX_ELBOW_CTRL = 4.0
@@ -66,11 +71,11 @@ def build_single_arm_xml():
       </body>
     </body>
 
-    <body name="tee" pos="{tee_x:.6f} 0 0.36">
-      <geom name="tee_geom" type="cylinder" size="0.01 0.08" rgba="1 0.5 0 1"/>
+    <body name="tee" pos="{tee_x:.6f} 0 {tee_z:.6f}">
+      <geom name="tee_geom" type="cylinder" size="0.01 {tee_half_height:.6f}" rgba="1 0.5 0 1"/>
     </body>
 
-    <body name="ball" pos="{ball_x:.6f} 0 {0.36 + 0.08 + ball_radius:.6f}">
+    <body name="ball" pos="{ball_x:.6f} 0 {ball_z:.6f}">
       <joint type="free"/>
       <geom name="golf_ball" type="sphere" size="{ball_radius:.6f}" mass="{ball_mass}" rgba="1 1 1 1"/>
     </body>

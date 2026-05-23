@@ -20,20 +20,20 @@ MIN_FORWARD_CLUB_SPEED = 0.50
 MIN_FORWARD_BALL_SPEED = 0.20
 POST_IMPACT_WINDOW_STEPS = 20
 MIN_POST_IMPACT_DISTANCE = 0.03
+FORCED_TOP_POSE = (math.radians(90.0), math.radians(90.0), math.radians(90.0))
+FORCED_TOP_TOLERANCE = math.radians(18.0)
 
-KP = (16.0, 11.0, 9.0)
-KD = (2.4, 1.7, 1.4)
+KP = (24.0, 18.0, 16.0)
+KD = (3.2, 2.4, 2.1)
 CTRL_LIMITS = (MAX_SHOULDER_CTRL, MAX_ELBOW_CTRL, MAX_WRIST_CTRL)
 
 PARAMS = [
-    ("top_step", 80.0, 260.0),
-    ("impact_gap", 70.0, 280.0),
-    ("finish_gap", 40.0, 260.0),
-    ("elbow_lag", 0.0, 90.0),
-    ("wrist_lag", 5.0, 130.0),
-    ("top_s", 0.20, 1.90),
-    ("top_e", -1.40, 1.20),
-    ("top_w", -1.00, 1.80),
+    ("top_step", 220.0, 420.0),
+    ("top_hold", 80.0, 200.0),
+    ("impact_gap", 150.0, 360.0),
+    ("finish_gap", 60.0, 260.0),
+    ("elbow_lag", 15.0, 130.0),
+    ("wrist_lag", 35.0, 170.0),
     ("impact_s", -0.45, 0.45),
     ("impact_e", -0.45, 0.45),
     ("impact_w", -0.45, 0.45),
@@ -43,14 +43,12 @@ PARAMS = [
 ]
 
 INITIAL_MEAN = [
-    150.0,
-    170.0,
-    130.0,
-    25.0,
-    55.0,
-    1.15,
-    -0.35,
-    0.75,
+    300.0,
+    120.0,
+    210.0,
+    120.0,
+    45.0,
+    80.0,
     0.02,
     -0.02,
     0.02,
@@ -60,14 +58,12 @@ INITIAL_MEAN = [
 ]
 
 INITIAL_STD = [
-    42.0,
+    45.0,
+    35.0,
     55.0,
-    55.0,
-    20.0,
-    24.0,
-    0.45,
-    0.55,
-    0.55,
+    45.0,
+    18.0,
+    25.0,
     0.20,
     0.20,
     0.20,
@@ -80,11 +76,9 @@ MIN_STD = [
     5.0,
     6.0,
     6.0,
+    6.0,
     4.0,
     4.0,
-    0.05,
-    0.05,
-    0.05,
     0.03,
     0.03,
     0.03,
@@ -121,33 +115,37 @@ def sample_vector(rng, mean, std):
 
 def vector_to_candidate(vector):
     top_step = int(round(vector[0]))
-    impact_step = int(round(top_step + vector[1]))
-    finish_step = int(round(impact_step + vector[2]))
-    elbow_lag = int(round(vector[3]))
-    wrist_lag = int(round(max(vector[4], elbow_lag + 5)))
-    wrist_lag = min(wrist_lag, max(5, impact_step - top_step - 10))
+    top_hold = int(round(vector[1]))
+    down_start_step = top_step + top_hold
+    impact_step = int(round(down_start_step + vector[2]))
+    finish_step = int(round(impact_step + vector[3]))
+    elbow_lag = int(round(vector[4]))
+    wrist_lag = int(round(max(vector[5], elbow_lag + 5)))
+    wrist_lag = min(wrist_lag, max(5, impact_step - down_start_step - 10))
     elbow_lag = min(elbow_lag, max(0, wrist_lag - 5))
 
     return {
         "top_step": top_step,
+        "top_hold": top_hold,
+        "down_start_step": down_start_step,
         "impact_step": impact_step,
         "finish_step": finish_step,
         "elbow_lag": elbow_lag,
         "wrist_lag": wrist_lag,
-        "top_pose": (vector[5], vector[6], vector[7]),
-        "impact_pose": (vector[8], vector[9], vector[10]),
-        "finish_pose": (vector[11], vector[12], vector[13]),
+        "top_pose": FORCED_TOP_POSE,
+        "impact_pose": (vector[6], vector[7], vector[8]),
+        "finish_pose": (vector[9], vector[10], vector[11]),
     }
 
 
 def candidate_to_vector(candidate):
     return [
         float(candidate["top_step"]),
-        float(candidate["impact_step"] - candidate["top_step"]),
+        float(candidate["top_hold"]),
+        float(candidate["impact_step"] - candidate.get("down_start_step", candidate["top_step"] + candidate["top_hold"])),
         float(candidate["finish_step"] - candidate["impact_step"]),
         float(candidate["elbow_lag"]),
         float(candidate["wrist_lag"]),
-        *candidate["top_pose"],
         *candidate["impact_pose"],
         *candidate["finish_pose"],
     ]
@@ -159,17 +157,21 @@ def target_angles(candidate, step):
     impact = candidate["impact_pose"]
     finish = candidate["finish_pose"]
     top_step = candidate["top_step"]
+    down_start_step = candidate.get("down_start_step", top_step + candidate.get("top_hold", 0))
     impact_step = candidate["impact_step"]
     finish_step = candidate["finish_step"]
 
     if step < top_step:
         return interpolate_pose(address, top, step / max(1, top_step))
 
+    if step < down_start_step:
+        return top
+
     if step < impact_step:
         target = []
         lags = (0, candidate["elbow_lag"], candidate["wrist_lag"])
         for joint in range(3):
-            joint_start = top_step + lags[joint]
+            joint_start = down_start_step + lags[joint]
             if step <= joint_start:
                 target.append(top[joint])
             else:
@@ -226,9 +228,20 @@ def line_score(data):
 def top_pose_score(data):
     shoulder, forearm, club = joint_absolute_angles(data)
     score = 0.0
-    score += angle_score(abs(shoulder), math.radians(65.0), math.radians(45.0))
-    score += angle_score(abs(club), math.radians(90.0), math.radians(45.0))
-    score += angle_score(abs(club - forearm), math.radians(60.0), math.radians(55.0))
+    score += angle_score(data.qpos[0], FORCED_TOP_POSE[0], FORCED_TOP_TOLERANCE)
+    score += angle_score(data.qpos[1], FORCED_TOP_POSE[1], FORCED_TOP_TOLERANCE)
+    score += angle_score(data.qpos[2], FORCED_TOP_POSE[2], FORCED_TOP_TOLERANCE)
+    score += angle_score(forearm, 0.0, math.radians(25.0))
+    score += angle_score(club, math.radians(90.0), math.radians(25.0))
+    score += angle_score(club - shoulder, 0.0, math.radians(25.0))
+    return score / 6.0
+
+
+def top_tracking_score(data, candidate):
+    target = candidate["top_pose"]
+    score = 0.0
+    for i in range(3):
+        score += angle_score(data.qpos[i], target[i], FORCED_TOP_TOLERANCE)
     return score / 3.0
 
 
@@ -279,6 +292,7 @@ def simulate_pd_swing(model, candidate, require_hit=True):
     impact_was_active_downswing = False
     impact_club_was_forward = False
     top_score_sample = 0.0
+    top_tracking_sample = 0.0
     impact_line_score = 0.0
     total_ctrl_energy = 0.0
 
@@ -294,7 +308,8 @@ def simulate_pd_swing(model, candidate, require_hit=True):
         club_velocity = (tip_pos - previous_tip_pos) / model.opt.timestep
         ball_velocity = (ball_pos - previous_ball_pos) / model.opt.timestep
         tip_to_ball = math.dist(tip_pos, ball_pos)
-        active_downswing = candidate["top_step"] <= step <= candidate["impact_step"] + 35
+        down_start_step = candidate.get("down_start_step", candidate["top_step"] + candidate.get("top_hold", 0))
+        active_downswing = down_start_step <= step <= candidate["impact_step"] + 35
 
         min_tip_to_ball = min(min_tip_to_ball, tip_to_ball)
         max_ball_x = max(max_ball_x, ball_pos[0])
@@ -304,8 +319,9 @@ def simulate_pd_swing(model, candidate, require_hit=True):
             active_max_club_vx = max(active_max_club_vx, club_velocity[0])
             active_max_club_vz = max(active_max_club_vz, club_velocity[2])
 
-        if step == candidate["top_step"]:
+        if step == down_start_step:
             top_score_sample = top_pose_score(data)
+            top_tracking_sample = top_tracking_score(data, candidate)
 
         if contact_includes(data, club_head_geom_id, ball_geom_id):
             hit_ball = True
@@ -347,16 +363,18 @@ def simulate_pd_swing(model, candidate, require_hit=True):
     if candidate["elbow_lag"] >= 0 and candidate["wrist_lag"] > candidate["elbow_lag"]:
         sequence_score += 1.0
     sequence_score += top_score_sample
+    sequence_score += top_tracking_sample
     sequence_score += impact_line_score
 
     reward = (
-        distance * 120.0
-        + height_gain * 120.0
-        + max(0.0, post_impact_max_ball_vx) * 6.0
-        + max(0.0, post_impact_max_ball_vz) * 12.0
-        + top_score_sample * 25.0
-        + impact_line_score * 45.0
-        + sequence_score * 20.0
+        distance * 55.0
+        + height_gain * 260.0
+        + max(0.0, post_impact_max_ball_vx) * 4.0
+        + max(0.0, post_impact_max_ball_vz) * 35.0
+        + top_score_sample * 500.0
+        + top_tracking_sample * 350.0
+        + impact_line_score * 60.0
+        + sequence_score * 55.0
         - total_ctrl_energy * 0.00002
     )
     if require_hit and not valid_impact:
@@ -364,8 +382,9 @@ def simulate_pd_swing(model, candidate, require_hit=True):
             INVALID_SWING_REWARD
             - active_min_tip_to_ball * 300.0
             + max(0.0, active_max_club_vx) * 8.0
-            + top_score_sample * 25.0
-            + sequence_score * 20.0
+            + top_score_sample * 500.0
+            + top_tracking_sample * 350.0
+            + sequence_score * 55.0
         )
 
     return {
@@ -383,6 +402,7 @@ def simulate_pd_swing(model, candidate, require_hit=True):
         "post_impact_distance": post_impact_distance,
         "sequence_score": sequence_score,
         "top_score": top_score_sample,
+        "top_tracking_score": top_tracking_sample,
         "impact_line_score": impact_line_score,
         "min_tip_to_ball": min_tip_to_ball,
         "active_min_tip_to_ball": active_min_tip_to_ball,
@@ -432,6 +452,10 @@ def print_result(prefix, result):
         round(result["post_impact_max_ball_vx"], 4),
         "post_vz",
         round(result["post_impact_max_ball_vz"], 4),
+        "top",
+        round(result["top_score"], 3),
+        "track",
+        round(result["top_tracking_score"], 3),
         "line",
         round(result["impact_line_score"], 3),
     )
@@ -441,6 +465,8 @@ def print_pd_candidate(candidate):
     print("\n# Paste this dictionary into human_golf_arm3joint_pd.py as PD_SWING_CANDIDATE:\n")
     print("PD_SWING_CANDIDATE = {")
     print(f'    "top_step": {candidate["top_step"]},')
+    print(f'    "top_hold": {candidate["top_hold"]},')
+    print(f'    "down_start_step": {candidate["down_start_step"]},')
     print(f'    "impact_step": {candidate["impact_step"]},')
     print(f'    "finish_step": {candidate["finish_step"]},')
     print(f'    "elbow_lag": {candidate["elbow_lag"]},')
@@ -507,6 +533,7 @@ def train(generations, population, elite_count, seed=None, smoothing=0.7):
     print("Post-impact max ball vz:", round(final_result["post_impact_max_ball_vz"], 4))
     print("Post-impact distance:", round(final_result["post_impact_distance"], 4))
     print("Top pose score:", round(final_result["top_score"], 4))
+    print("Top tracking score:", round(final_result["top_tracking_score"], 4))
     print("Impact line score:", round(final_result["impact_line_score"], 4))
     print("Sequence score:", round(final_result["sequence_score"], 4))
     print("Active downswing min tip-to-ball:", round(final_result["active_min_tip_to_ball"], 4))

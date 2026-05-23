@@ -8,14 +8,16 @@ from human_cem_pd_trained3joint import apply_pd_controls, target_angles
 
 
 PD_SWING_CANDIDATE = {
-    "top_step": 87,
-    "impact_step": 317,
-    "finish_step": 368,
-    "elbow_lag": 25,
-    "wrist_lag": 41,
-    "top_pose": (1.2688, -0.1279, 0.9098),
-    "impact_pose": (-0.4500, -0.4375, -0.3760),
-    "finish_pose": (-1.3294, -0.8780, -1.2000),
+    "top_step": 232,
+    "top_hold": 117,
+    "down_start_step": 349,
+    "impact_step": 612,
+    "finish_step": 672,
+    "elbow_lag": 47,
+    "wrist_lag": 68,
+    "top_pose": (1.5708, 1.5708, 1.5708),
+    "impact_pose": (-0.3934, -0.4500, -0.3582),
+    "finish_pose": (-0.9138, -0.5738, -0.4341),
 }
 
 MIN_FORWARD_CLUB_SPEED = 0.50
@@ -68,7 +70,11 @@ if __name__ == "__main__":
                 first_hit_step = step
                 impact_ball_x = ball_pos[0]
                 impact_club_vx = club_velocity[0]
-                active_downswing = PD_SWING_CANDIDATE["top_step"] <= step <= PD_SWING_CANDIDATE["impact_step"] + 35
+                down_start_step = PD_SWING_CANDIDATE.get(
+                    "down_start_step",
+                    PD_SWING_CANDIDATE["top_step"] + PD_SWING_CANDIDATE.get("top_hold", 0),
+                )
+                active_downswing = down_start_step <= step <= PD_SWING_CANDIDATE["impact_step"] + 35
                 print("club head contacted ball at step:", step)
                 print("active downswing:", active_downswing)
                 print("club vx at impact:", round(impact_club_vx, 3))

@@ -12,12 +12,15 @@ from golf_3joint_common import (
     ball_mass,
     ball_radius,
     ball_x,
+    ball_z,
     club_len,
     forearm_len,
     head_mass,
     shaft_mass,
     shoulder_height,
+    tee_half_height,
     tee_x,
+    tee_z,
     upper_arm_len,
 )
 
@@ -58,11 +61,11 @@ def arm_xml(prefix, y, color, tip_color):
       </body>
     </body>
 
-    <body name="{prefix}_tee" pos="{tee_x:.6f} {y:.2f} 0.36">
-      <geom name="{prefix}_tee_geom" type="cylinder" size="0.01 0.08" rgba="1 0.5 0 1"/>
+    <body name="{prefix}_tee" pos="{tee_x:.6f} {y:.2f} {tee_z:.6f}">
+      <geom name="{prefix}_tee_geom" type="cylinder" size="0.01 {tee_half_height:.6f}" rgba="1 0.5 0 1"/>
     </body>
 
-    <body name="{prefix}_ball" pos="{ball_x:.6f} {y:.2f} {0.36 + 0.08 + ball_radius:.6f}">
+    <body name="{prefix}_ball" pos="{ball_x:.6f} {y:.2f} {ball_z:.6f}">
       <joint type="free"/>
       <geom name="{prefix}_ball_geom" type="sphere" size="{ball_radius:.6f}" mass="{ball_mass}" rgba="1 1 1 1"/>
     </body>
