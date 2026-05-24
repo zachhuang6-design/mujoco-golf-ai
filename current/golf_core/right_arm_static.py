@@ -5,7 +5,7 @@ import time
 import mujoco
 import mujoco.viewer
 
-from golf_3joint_common import (
+from golf_core.common import (
     BALL_CONTACT_ATTRS,
     CLUB_PRESETS,
     ball_mass,

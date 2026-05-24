@@ -46,14 +46,14 @@ python -m golf_rl.train_sac \
   --hand right \
   --timesteps 1000000 \
   --device cuda \
-  --model-dir trained_models/residual_stage1_dgx \
-  --log-dir runs/sac_residual_stage1_dgx
+  --model-dir artifacts/trained_models/residual_stage1_dgx \
+  --log-dir artifacts/runs/sac_residual_stage1_dgx
 ```
 
 ## 5. Evaluate
 
 ```bash
-python -m golf_rl.evaluate_policy trained_models/residual_stage1_dgx/best_model \
+python -m golf_rl.evaluate_policy artifacts/trained_models/residual_stage1_dgx/best_model \
   --env residual \
   --algo sac \
   --club 7iron \
@@ -66,7 +66,7 @@ python -m golf_rl.evaluate_policy trained_models/residual_stage1_dgx/best_model 
 If the DGX has a display:
 
 ```bash
-python -m golf_rl.visualize_policy trained_models/residual_stage1_dgx/best_model \
+python -m golf_rl.visualize_policy artifacts/trained_models/residual_stage1_dgx/best_model \
   --env residual \
   --algo sac \
   --club 7iron \

@@ -13,8 +13,8 @@ except ModuleNotFoundError as exc:
         "../.venv/bin/python -m pip install gymnasium stable-baselines3"
     ) from exc
 
-from golf_3joint_common import CLUB_PRESETS, normalize_club_name
-from human_right_arm_biomech_static import (
+from golf_core.common import CLUB_PRESETS, normalize_club_name
+from golf_core.right_arm_static import (
     DEFAULT_HAND,
     HAND_SIGNS,
     apply_setup_pose,

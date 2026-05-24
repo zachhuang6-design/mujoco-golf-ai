@@ -1,7 +1,7 @@
 import numpy as np
 
-from human_right_arm_biomech_cem import apply_pd_controls, target_angles
-from human_right_arm_biomech_swing import BIOMECH_SWING_CANDIDATE
+from golf_core.right_arm_cem import apply_pd_controls, target_angles
+from golf_core.right_arm_swing import BIOMECH_SWING_CANDIDATE
 
 from golf_rl.envs.golf_swing_env import GolfSwingEnv
 

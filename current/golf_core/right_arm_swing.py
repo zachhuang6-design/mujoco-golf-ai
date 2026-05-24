@@ -6,8 +6,8 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 
-from golf_3joint_common import CLUB_PRESETS, get_club_preset
-from human_right_arm_biomech_cem import (
+from golf_core.common import CLUB_PRESETS, get_club_preset
+from golf_core.right_arm_cem import (
     JOINT_NAMES,
     apply_pd_controls,
     default_finish_pose,
@@ -15,7 +15,7 @@ from human_right_arm_biomech_cem import (
     default_top_pose,
     target_angles,
 )
-from human_right_arm_biomech_static import (
+from golf_core.right_arm_static import (
     DEFAULT_HAND,
     HAND_SIGNS,
     apply_setup_pose,
@@ -52,7 +52,7 @@ PLANE_LOCK_MAX_FORCE = 4500.0
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Replay the 6-joint biomechanics golf swing.")
+    parser = argparse.ArgumentParser(description="Replay the 7-joint biomechanics golf swing.")
     parser.add_argument("--club", choices=sorted(CLUB_PRESETS), default="7iron")
     parser.add_argument("--hand", choices=sorted(HAND_SIGNS), default=DEFAULT_HAND)
     parser.add_argument(
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     candidate = dict(BIOMECH_SWING_CANDIDATE)
     candidate["hand"] = hand
     if candidate.get("address_pose") is None:
-        from human_right_arm_biomech_cem import address_pose
+        from golf_core.right_arm_cem import address_pose
 
         candidate["address_pose"] = address_pose(hand)
     if hand != "right":

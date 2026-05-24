@@ -5,8 +5,8 @@ import time
 
 import mujoco
 
-from golf_3joint_common import CLUB_PRESETS, get_club_launch_profile, normalize_club_name
-from human_right_arm_biomech_static import (
+from golf_core.common import CLUB_PRESETS, get_club_launch_profile, normalize_club_name
+from golf_core.right_arm_static import (
     CTRL_LIMITS,
     DEFAULT_HAND,
     HAND_SIGNS,
@@ -699,7 +699,7 @@ def print_result(prefix, result):
 
 
 def print_candidate(candidate):
-    print("\n# Paste this dictionary into human_right_arm_biomech_swing.py as BIOMECH_SWING_CANDIDATE:\n")
+    print("\n# Paste this dictionary into golf_core/right_arm_swing.py as BIOMECH_SWING_CANDIDATE:\n")
     print("BIOMECH_SWING_CANDIDATE = {")
     print(f'    "hand": "{candidate["hand"]}",')
     for key in ("top_step", "top_hold", "down_start_step", "impact_step", "finish_step", "elbow_lag", "wrist_lag"):
@@ -783,7 +783,7 @@ def train(generations, population, elite_count, seed=None, smoothing=0.7, club_n
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="CEM trainer for the 6-joint right-arm biomechanics model.")
+    parser = argparse.ArgumentParser(description="CEM trainer for the 7-joint right-arm biomechanics model.")
     parser.add_argument("--generations", type=int, default=80)
     parser.add_argument("--population", type=int, default=128)
     parser.add_argument("--elite-count", type=int, default=16)

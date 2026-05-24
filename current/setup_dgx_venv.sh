@@ -41,4 +41,4 @@ echo "Activate it with:"
 echo "  source .venv-dgx/bin/activate"
 echo
 echo "Train SAC on GPU with:"
-echo "  python -m golf_rl.train_sac --club 7iron --hand right --timesteps 1000000 --device cuda --model-dir trained_models/stageb_dgx --log-dir runs/sac_stageb_dgx"
+echo "  python -m golf_rl.train_sac --env residual --club 7iron --hand right --timesteps 1000000 --device cuda --model-dir artifacts/trained_models/residual_stage1_dgx --log-dir artifacts/runs/sac_residual_stage1_dgx"
