@@ -3,8 +3,16 @@ import time
 
 import mujoco.viewer
 
-from golf_rl.envs import GolfSwingEnv
+from golf_rl.envs import GolfResidualSwingEnv, GolfSwingEnv
 from golf_rl.evaluate_policy import load_model
+
+
+def make_env(env_name, club, hand):
+    if env_name == "raw":
+        return GolfSwingEnv(club_type=club, hand=hand)
+    if env_name == "residual":
+        return GolfResidualSwingEnv(club_type=club, hand=hand)
+    raise ValueError(f"Unknown env '{env_name}'. Use raw or residual.")
 
 
 def main():
@@ -13,11 +21,12 @@ def main():
     parser.add_argument("--algo", choices=("sac", "ppo"), default="sac")
     parser.add_argument("--club", default="7iron")
     parser.add_argument("--hand", default="right")
+    parser.add_argument("--env", choices=("raw", "residual"), default="raw")
     parser.add_argument("--speed", type=float, default=12.0)
     args = parser.parse_args()
 
     model = load_model(args.algo, args.model_path)
-    env = GolfSwingEnv(club_type=args.club, hand=args.hand)
+    env = make_env(args.env, args.club, args.hand)
     obs, info = env.reset()
     printed_impact = False
 

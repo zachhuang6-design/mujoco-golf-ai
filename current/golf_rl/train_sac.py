@@ -1,7 +1,15 @@
 import argparse
 from pathlib import Path
 
-from golf_rl.envs import GolfSwingEnv
+from golf_rl.envs import GolfResidualSwingEnv, GolfSwingEnv
+
+
+def make_env(env_name, club, hand):
+    if env_name == "raw":
+        return GolfSwingEnv(club_type=club, hand=hand)
+    if env_name == "residual":
+        return GolfResidualSwingEnv(club_type=club, hand=hand)
+    raise ValueError(f"Unknown env '{env_name}'. Use raw or residual.")
 
 
 def require_sb3():
@@ -51,6 +59,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train SAC on the biomechanical golf swing environment.")
     parser.add_argument("--club", default="7iron")
     parser.add_argument("--hand", default="right")
+    parser.add_argument("--env", choices=("raw", "residual"), default="raw")
     parser.add_argument("--timesteps", type=int, default=1_000_000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--log-dir", default="runs/sac_golf")
@@ -60,11 +69,11 @@ def main():
     args = parser.parse_args()
 
     Path(args.model_dir).mkdir(parents=True, exist_ok=True)
-    env = GolfSwingEnv(club_type=args.club, hand=args.hand)
+    env = make_env(args.env, args.club, args.hand)
     if args.check_env:
         check_env(env, warn=True)
     env = Monitor(env)
-    eval_env = Monitor(GolfSwingEnv(club_type=args.club, hand=args.hand))
+    eval_env = Monitor(make_env(args.env, args.club, args.hand))
 
     model = SAC(
         policy="MlpPolicy",
@@ -86,7 +95,7 @@ def main():
         CheckpointCallback(
             save_freq=25_000,
             save_path=args.model_dir,
-            name_prefix=f"sac_{args.club}_{args.hand}",
+            name_prefix=f"sac_{args.env}_{args.club}_{args.hand}",
         ),
         EvalCallback(
             eval_env,
@@ -97,7 +106,7 @@ def main():
         ),
     ]
     model.learn(total_timesteps=args.timesteps, callback=callbacks)
-    model.save(str(Path(args.model_dir) / f"sac_{args.club}_{args.hand}_final"))
+    model.save(str(Path(args.model_dir) / f"sac_{args.env}_{args.club}_{args.hand}_final"))
 
 
 if __name__ == "__main__":

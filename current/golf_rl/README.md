@@ -24,6 +24,17 @@ bash setup_dgx_venv.sh
 
 ## Main Training
 
+Recommended next run: residual SAC. This starts from the working CEM/PD swing
+and learns torque corrections instead of trying to invent a full golf swing
+from raw torque exploration.
+
+```bash
+../.venv/bin/python -m golf_rl.train_sac --env residual --club 7iron --hand right --timesteps 1000000 --model-dir trained_models/residual_stage1 --log-dir runs/sac_residual_stage1
+```
+
+Raw torque SAC is still available, but it is currently much harder and should
+not be the main path until the residual learner is working:
+
 ```bash
 ../.venv/bin/python -m golf_rl.train_sac --club 7iron --hand right --timesteps 1000000
 ```
@@ -37,8 +48,8 @@ PPO comparison:
 ## Evaluate And Watch
 
 ```bash
-../.venv/bin/python -m golf_rl.evaluate_policy trained_models/sac_7iron_right_final.zip --algo sac
-../.venv/bin/python -m golf_rl.visualize_policy trained_models/sac_7iron_right_final.zip --algo sac
+../.venv/bin/python -m golf_rl.evaluate_policy trained_models/residual_stage1/best_model.zip --env residual --algo sac
+../.venv/bin/python -m golf_rl.visualize_policy trained_models/residual_stage1/best_model.zip --env residual --algo sac
 ```
 
 ## Current Curriculum Stage

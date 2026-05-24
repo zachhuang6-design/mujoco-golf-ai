@@ -152,7 +152,7 @@ class GolfSwingEnv(gym.Env):
         club_type="7iron",
         hand=DEFAULT_HAND,
         reward_config_path=None,
-        max_steps=700,
+        max_steps=1000,
         terminate_after_impact_steps=24,
         randomize_setup=False,
     ):

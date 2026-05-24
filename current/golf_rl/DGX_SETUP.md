@@ -41,18 +41,20 @@ If it says `False`, the venv is using a CPU-only PyTorch build. On DGX hardware,
 
 ```bash
 python -m golf_rl.train_sac \
+  --env residual \
   --club 7iron \
   --hand right \
   --timesteps 1000000 \
   --device cuda \
-  --model-dir trained_models/stageb_dgx \
-  --log-dir runs/sac_stageb_dgx
+  --model-dir trained_models/residual_stage1_dgx \
+  --log-dir runs/sac_residual_stage1_dgx
 ```
 
 ## 5. Evaluate
 
 ```bash
-python -m golf_rl.evaluate_policy trained_models/stageb_dgx/sac_7iron_right_final \
+python -m golf_rl.evaluate_policy trained_models/residual_stage1_dgx/best_model \
+  --env residual \
   --algo sac \
   --club 7iron \
   --hand right \
@@ -64,7 +66,8 @@ python -m golf_rl.evaluate_policy trained_models/stageb_dgx/sac_7iron_right_fina
 If the DGX has a display:
 
 ```bash
-python -m golf_rl.visualize_policy trained_models/stageb_dgx/sac_7iron_right_final \
+python -m golf_rl.visualize_policy trained_models/residual_stage1_dgx/best_model \
+  --env residual \
   --algo sac \
   --club 7iron \
   --hand right \
