@@ -42,6 +42,28 @@ CTRL_BY_JOINT = tuple(CTRL_LIMITS[name] for name in JOINT_NAMES)
 
 IMPACT_ELBOW_TARGET = deg(15.0)
 IMPACT_ELBOW_TOLERANCE = deg(12.0)
+TOP_ELBOW_TARGET = deg(43.0)
+TOP_ELBOW_TOLERANCE = deg(12.0)
+TOP_WRIST_COCK_TARGET_DEG = 74.0
+TOP_WRIST_COCK_TOLERANCE = deg(16.0)
+EARLY_SET_FRACTION = 0.58
+EARLY_ELBOW_TARGET = deg(24.0)
+EARLY_ELBOW_TOLERANCE = deg(15.0)
+EARLY_WRIST_COCK_TARGET_DEG = 48.0
+EARLY_WRIST_COCK_TOLERANCE = deg(18.0)
+EARLY_ROTATION_FRACTION = 0.50
+EARLY_SHOULDER_TURN_TARGET_DEG = 42.0
+EARLY_SHOULDER_LIFT_TARGET_DEG = 45.0
+EARLY_SHOULDER_TWIST_TARGET_DEG = 20.0
+EARLY_SHOULDER_TURN_TOLERANCE = deg(22.0)
+EARLY_SHOULDER_LIFT_TOLERANCE = deg(24.0)
+EARLY_SHOULDER_TWIST_TOLERANCE = deg(22.0)
+BACKSWING_SHOULDER_TURN_SET_FRACTION = 0.82
+BACKSWING_SHOULDER_LIFT_SET_FRACTION = 0.88
+BACKSWING_SHOULDER_TWIST_SET_FRACTION = 0.70
+BACKSWING_ELBOW_SET_FRACTION = 0.72
+BACKSWING_WRIST_SET_FRACTION = 0.62
+OFFLINE_Y_PENALTY = 850.0
 
 
 def clip(value, low, high):
@@ -90,8 +112,8 @@ def default_top_pose(hand=DEFAULT_HAND):
         sign * deg(70.0),
         sign * deg(85.0),
         sign * deg(35.0),
-        deg(45.0),
-        sign * deg(62.0),
+        TOP_ELBOW_TARGET,
+        sign * deg(TOP_WRIST_COCK_TARGET_DEG),
         sign * deg(12.0),
         sign * deg(10.0),
     )
@@ -140,8 +162,8 @@ def parameter_specs(hand=DEFAULT_HAND):
         ("top_shoulder_turn", *signed_range(hand, 40.0, 105.0)),
         ("top_shoulder_lift", *signed_range(hand, 55.0, 120.0)),
         ("top_shoulder_twist", *signed_range(hand, 5.0, 70.0)),
-        ("top_elbow_flex", deg(20.0), deg(45.0)),
-        ("top_wrist_cock", *signed_range(hand, 35.0, 80.0)),
+        ("top_elbow_flex", deg(30.0), deg(45.0)),
+        ("top_wrist_cock", *signed_range(hand, 55.0, 80.0)),
         ("top_wrist_deviation", *signed_range(hand, -25.0, 35.0)),
         ("top_wrist_roll", *signed_range(hand, -35.0, 45.0)),
         ("impact_shoulder_turn", *signed_range(hand, -25.0, 20.0)),
@@ -189,8 +211,8 @@ def initial_std():
         deg(20.0),
         deg(18.0),
         deg(16.0),
-        deg(8.0),
-        deg(15.0),
+        deg(5.0),
+        deg(7.0),
         deg(14.0),
         deg(18.0),
         deg(14.0),
@@ -287,7 +309,22 @@ def target_angles(candidate, step):
     finish_step = candidate["finish_step"]
 
     if step < top_step:
-        return interpolate_pose(address, top, step / max(1, top_step))
+        target = []
+        for joint in range(len(JOINT_NAMES)):
+            if joint == 0:
+                t = step / max(1, top_step * BACKSWING_SHOULDER_TURN_SET_FRACTION)
+            elif joint == 1:
+                t = step / max(1, top_step * BACKSWING_SHOULDER_LIFT_SET_FRACTION)
+            elif joint == 2:
+                t = step / max(1, top_step * BACKSWING_SHOULDER_TWIST_SET_FRACTION)
+            elif joint == 3:
+                t = step / max(1, top_step * BACKSWING_ELBOW_SET_FRACTION)
+            elif joint in (4, 5, 6):
+                t = step / max(1, top_step * BACKSWING_WRIST_SET_FRACTION)
+            else:
+                t = step / max(1, top_step)
+            target.append(lerp(address[joint], top[joint], smoothstep(t)))
+        return tuple(target)
 
     if step < down_start_step:
         return top
@@ -360,6 +397,58 @@ def elbow_score(elbow_angle):
     return angle_score(elbow_angle, IMPACT_ELBOW_TARGET, IMPACT_ELBOW_TOLERANCE)
 
 
+def top_set_score(data, candidate):
+    hand = candidate.get("hand", DEFAULT_HAND)
+    sign = hand_sign(hand)
+    elbow = data.qpos[3]
+    wrist_cock = data.qpos[4]
+    elbow_part = angle_score(elbow, TOP_ELBOW_TARGET, TOP_ELBOW_TOLERANCE)
+    wrist_part = angle_score(
+        wrist_cock,
+        sign * deg(TOP_WRIST_COCK_TARGET_DEG),
+        TOP_WRIST_COCK_TOLERANCE,
+    )
+    return 0.5 * elbow_part + 0.5 * wrist_part
+
+
+def early_set_score(data, candidate):
+    hand = candidate.get("hand", DEFAULT_HAND)
+    sign = hand_sign(hand)
+    elbow = data.qpos[3]
+    wrist_cock = data.qpos[4]
+    elbow_part = angle_score(elbow, EARLY_ELBOW_TARGET, EARLY_ELBOW_TOLERANCE)
+    wrist_part = angle_score(
+        wrist_cock,
+        sign * deg(EARLY_WRIST_COCK_TARGET_DEG),
+        EARLY_WRIST_COCK_TOLERANCE,
+    )
+    return 0.5 * elbow_part + 0.5 * wrist_part
+
+
+def early_rotation_score(data, candidate):
+    hand = candidate.get("hand", DEFAULT_HAND)
+    sign = hand_sign(hand)
+    shoulder_turn = data.qpos[0]
+    shoulder_lift = data.qpos[1]
+    shoulder_twist = data.qpos[2]
+    turn_part = angle_score(
+        shoulder_turn,
+        sign * deg(EARLY_SHOULDER_TURN_TARGET_DEG),
+        EARLY_SHOULDER_TURN_TOLERANCE,
+    )
+    lift_part = angle_score(
+        shoulder_lift,
+        sign * deg(EARLY_SHOULDER_LIFT_TARGET_DEG),
+        EARLY_SHOULDER_LIFT_TOLERANCE,
+    )
+    twist_part = angle_score(
+        shoulder_twist,
+        sign * deg(EARLY_SHOULDER_TWIST_TARGET_DEG),
+        EARLY_SHOULDER_TWIST_TOLERANCE,
+    )
+    return (turn_part + lift_part + twist_part) / 3.0
+
+
 def simulate_swing(model, candidate, launch_profile, require_hit=True):
     data = mujoco.MjData(model)
     apply_setup_pose(model, data, candidate.get("hand", DEFAULT_HAND))
@@ -370,6 +459,7 @@ def simulate_swing(model, candidate, launch_profile, require_hit=True):
     club_tip_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "club_tip")
 
     initial_ball_x = data.xpos[ball_id][0]
+    initial_ball_y = data.xpos[ball_id][1]
     initial_ball_z = data.xpos[ball_id][2]
     max_ball_x = initial_ball_x
     max_ball_z = initial_ball_z
@@ -385,10 +475,14 @@ def simulate_swing(model, candidate, launch_profile, require_hit=True):
     post_impact_max_ball_vz = 0.0
     post_impact_distance = 0.0
     top_sample = 0.0
+    early_set_sample = 0.0
+    early_rotation_sample = 0.0
+    top_set_sample = 0.0
     impact_sample = 0.0
     elbow_sample = 0.0
     address_sample = address_score(data, candidate)
     total_ctrl_energy = 0.0
+    max_offline_y = 0.0
     impact_was_active_downswing = False
     impact_club_was_forward = False
 
@@ -410,12 +504,20 @@ def simulate_swing(model, candidate, launch_profile, require_hit=True):
         min_tip_to_ball = min(min_tip_to_ball, tip_to_ball)
         max_ball_x = max(max_ball_x, ball_pos[0])
         max_ball_z = max(max_ball_z, ball_pos[2])
+        max_offline_y = max(max_offline_y, abs(ball_pos[1] - initial_ball_y))
         if active_downswing:
             active_min_tip_to_ball = min(active_min_tip_to_ball, tip_to_ball)
             active_max_club_vx = max(active_max_club_vx, club_velocity[0])
 
         if step == down_start_step:
             top_sample = top_score(data, candidate)
+            top_set_sample = top_set_score(data, candidate)
+
+        if step == int(candidate["top_step"] * EARLY_SET_FRACTION):
+            early_set_sample = early_set_score(data, candidate)
+
+        if step == int(candidate["top_step"] * EARLY_ROTATION_FRACTION):
+            early_rotation_sample = early_rotation_score(data, candidate)
 
         if contact_includes(data, club_head_geom_id, ball_geom_id):
             hit_ball = True
@@ -463,7 +565,15 @@ def simulate_swing(model, candidate, launch_profile, require_hit=True):
         - launch_profile["vertical_speed_tolerance"],
     )
     sequence_score = 1.0 if candidate["wrist_lag"] > candidate["elbow_lag"] else 0.0
-    sequence_score += address_sample + top_sample + impact_sample + elbow_sample
+    sequence_score += (
+        address_sample
+        + top_sample
+        + top_set_sample
+        + early_set_sample
+        + early_rotation_sample
+        + impact_sample
+        + elbow_sample
+    )
 
     reward = (
         distance * launch_profile["distance_weight"]
@@ -473,9 +583,13 @@ def simulate_swing(model, candidate, launch_profile, require_hit=True):
         + launch_score * launch_profile["launch_score_weight"]
         + address_sample * 120.0
         + top_sample * 420.0
+        + top_set_sample * 380.0
+        + early_set_sample * 260.0
+        + early_rotation_sample * 320.0
         + impact_sample * 180.0
         + elbow_sample * 200.0
         + sequence_score * 45.0
+        - max_offline_y * OFFLINE_Y_PENALTY
         - excess_vertical_speed * launch_profile["excess_vertical_speed_penalty"]
         - total_ctrl_energy * 0.00002
     )
@@ -486,8 +600,12 @@ def simulate_swing(model, candidate, launch_profile, require_hit=True):
             + max(0.0, active_max_club_vx) * 8.0
             + address_sample * 120.0
             + top_sample * 420.0
+            + top_set_sample * 380.0
+            + early_set_sample * 260.0
+            + early_rotation_sample * 320.0
             + elbow_sample * 200.0
             + sequence_score * 45.0
+            - max_offline_y * OFFLINE_Y_PENALTY
         )
 
     return {
@@ -504,12 +622,16 @@ def simulate_swing(model, candidate, launch_profile, require_hit=True):
         "post_impact_distance": post_impact_distance,
         "address_score": address_sample,
         "top_score": top_sample,
+        "top_set_score": top_set_sample,
+        "early_set_score": early_set_sample,
+        "early_rotation_score": early_rotation_sample,
         "impact_pose_score": impact_sample,
         "impact_elbow_score": elbow_sample,
         "launch_score": launch_score,
         "sequence_score": sequence_score,
         "active_min_tip_to_ball": active_min_tip_to_ball,
         "active_max_club_vx": active_max_club_vx,
+        "offline_y": max_offline_y,
     }
 
 
@@ -557,6 +679,14 @@ def print_result(prefix, result):
         round(result["post_impact_max_ball_vz"], 4),
         "top",
         round(result["top_score"], 3),
+        "top_set",
+        round(result["top_set_score"], 3),
+        "early_set",
+        round(result["early_set_score"], 3),
+        "early_rot",
+        round(result["early_rotation_score"], 3),
+        "offline_y",
+        round(result["offline_y"], 4),
         "impact",
         round(result["impact_pose_score"], 3),
         "elbow_deg",
@@ -642,6 +772,10 @@ def train(generations, population, elite_count, seed=None, smoothing=0.7, club_n
     print("Post-impact distance:", round(final_result["post_impact_distance"], 4))
     print("Address score:", round(final_result["address_score"], 4))
     print("Top score:", round(final_result["top_score"], 4))
+    print("Top set score:", round(final_result["top_set_score"], 4))
+    print("Early hinge set score:", round(final_result["early_set_score"], 4))
+    print("Early shoulder/elbow-plane rotation score:", round(final_result["early_rotation_score"], 4))
+    print("Offline y:", round(final_result["offline_y"], 4))
     print("Impact pose score:", round(final_result["impact_pose_score"], 4))
     print("Impact elbow score:", round(final_result["impact_elbow_score"], 4))
     print("Launch score:", round(final_result["launch_score"], 4))

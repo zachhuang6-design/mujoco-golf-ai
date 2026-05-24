@@ -4,6 +4,7 @@ import time
 
 import mujoco
 import mujoco.viewer
+import numpy as np
 
 from golf_3joint_common import CLUB_PRESETS, get_club_preset
 from human_right_arm_biomech_cem import (
@@ -26,28 +27,39 @@ from human_right_arm_biomech_static import (
 
 BIOMECH_SWING_CANDIDATE = {
     "hand": "right",
-    "top_step": 347,
-    "top_hold": 93,
-    "down_start_step": 440,
-    "impact_step": 670,
-    "finish_step": 747,
-    "elbow_lag": 57,
-    "wrist_lag": 102,
+    "top_step": 432,
+    "top_hold": 98,
+    "down_start_step": 530,
+    "impact_step": 734,
+    "finish_step": 872,
+    "elbow_lag": 49,
+    "wrist_lag": 99,
     "address_pose": (0.0000, -0.1309, 0.0000, 0.0000, -0.3927, 0.0000, 0.0000),
-    "top_pose": (-1.6462, -1.9082, -0.1057, 0.6920, -0.6109, -0.6099, 0.3444),
-    "impact_pose": (0.1327, 0.3020, -0.2100, 0.3104, 0.3047, 0.2676, 0.1631),
-    "finish_pose": (0.8344, 0.6029, 0.8372, 0.3892, 1.1437, 0.3461, 0.7266),
+    "top_pose": (-1.4518, -1.3100, -0.7145, 0.7796, -1.2577, 0.1968, -0.2499),
+    "impact_pose": (-0.3300, 0.3142, -0.4022, 0.1465, 0.3033, 0.1727, 0.3793),
+    "finish_pose": (1.0406, 0.9567, 0.4465, 0.1173, 0.4759, -0.3089, 0.3958),
 }
 
 MIN_FORWARD_CLUB_SPEED = 0.50
 MIN_POST_IMPACT_DISTANCE = 0.03
 POST_IMPACT_WINDOW_STEPS = 20
+TRAIL_STRIDE = 3
+MAX_TRAIL_POINTS = 260
+SHAFT_SNAPSHOT_STRIDE = 8
+PLANE_LOCK_KP = 8500.0
+PLANE_LOCK_KD = 180.0
+PLANE_LOCK_MAX_FORCE = 4500.0
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Replay the 6-joint biomechanics golf swing.")
     parser.add_argument("--club", choices=sorted(CLUB_PRESETS), default="7iron")
     parser.add_argument("--hand", choices=sorted(HAND_SIGNS), default=DEFAULT_HAND)
+    parser.add_argument(
+        "--force-plane",
+        action="store_true",
+        help="One-off debug mode: strongly guide the clubhead and shaft back onto the visual swing plane.",
+    )
     return parser.parse_args()
 
 
@@ -57,6 +69,109 @@ def club_hit_ball(data, club_head_geom_id, ball_geom_id):
         if {contact.geom1, contact.geom2} == {club_head_geom_id, ball_geom_id}:
             return True
     return False
+
+
+def normalize_vec(values):
+    length = float(np.linalg.norm(values))
+    if length < 1e-9:
+        return np.array([0.0, 1.0, 0.0], dtype=float)
+    return np.asarray(values, dtype=float) / length
+
+
+def swing_plane_from_setup(data, shoulder_site_id, ball_id):
+    shoulder = np.asarray(data.site_xpos[shoulder_site_id], dtype=float)
+    ball = np.asarray(data.xpos[ball_id], dtype=float)
+    target_axis = np.array([1.0, 0.0, 0.0], dtype=float)
+    normal = normalize_vec(np.cross(target_axis, shoulder - ball))
+    return ball.copy(), normal
+
+
+def plane_distance_signed(point, plane_point, plane_normal):
+    return float(np.dot(np.asarray(point, dtype=float) - plane_point, plane_normal))
+
+
+def clipped_plane_force(distance, normal_speed, plane_normal):
+    magnitude = -PLANE_LOCK_KP * distance - PLANE_LOCK_KD * normal_speed
+    magnitude = max(-PLANE_LOCK_MAX_FORCE, min(PLANE_LOCK_MAX_FORCE, magnitude))
+    return plane_normal * magnitude
+
+
+def apply_force_at_point(model, data, force, point, body_id):
+    mujoco.mj_applyFT(
+        model,
+        data,
+        np.asarray(force, dtype=float),
+        np.zeros(3),
+        np.asarray(point, dtype=float),
+        body_id,
+        data.qfrc_applied,
+    )
+
+
+def apply_plane_lock(
+    model,
+    data,
+    plane_point,
+    plane_normal,
+    club_head_geom_id,
+    wrist_site_id,
+    previous_head_pos,
+    previous_wrist_pos,
+):
+    data.qfrc_applied[:] = 0.0
+    head_pos = np.asarray(data.geom_xpos[club_head_geom_id], dtype=float)
+    wrist_pos = np.asarray(data.site_xpos[wrist_site_id], dtype=float)
+    shaft_mid = 0.5 * (head_pos + wrist_pos)
+    previous_shaft_mid = 0.5 * (previous_head_pos + previous_wrist_pos)
+
+    head_velocity = (head_pos - previous_head_pos) / model.opt.timestep
+    wrist_velocity = (wrist_pos - previous_wrist_pos) / model.opt.timestep
+    shaft_mid_velocity = (shaft_mid - previous_shaft_mid) / model.opt.timestep
+
+    head_body_id = model.geom_bodyid[club_head_geom_id]
+    wrist_body_id = model.site_bodyid[wrist_site_id]
+
+    for point, velocity, body_id, share in (
+        (head_pos, head_velocity, head_body_id, 0.45),
+        (wrist_pos, wrist_velocity, wrist_body_id, 0.30),
+        (shaft_mid, shaft_mid_velocity, head_body_id, 0.25),
+    ):
+        distance = plane_distance_signed(point, plane_point, plane_normal)
+        normal_speed = float(np.dot(velocity, plane_normal))
+        force = clipped_plane_force(distance, normal_speed, plane_normal) * share
+        apply_force_at_point(model, data, force, point, body_id)
+
+
+def add_trail_capsule(scene, start, end, radius, rgba):
+    if scene.ngeom >= scene.maxgeom:
+        return
+    geom = scene.geoms[scene.ngeom]
+    mujoco.mjv_initGeom(
+        geom,
+        mujoco.mjtGeom.mjGEOM_CAPSULE,
+        np.array([radius, 0.0, 0.0]),
+        np.zeros(3),
+        np.eye(3).reshape(-1),
+        np.array(rgba),
+    )
+    mujoco.mjv_connector(
+        geom,
+        mujoco.mjtGeom.mjGEOM_CAPSULE,
+        radius,
+        np.asarray(start, dtype=float),
+        np.asarray(end, dtype=float),
+    )
+    scene.ngeom += 1
+
+
+def draw_club_trails(scene, head_trail, wrist_trail):
+    scene.ngeom = 0
+    for i in range(1, len(head_trail)):
+        add_trail_capsule(scene, head_trail[i - 1], head_trail[i], 0.006, (1.0, 0.78, 0.05, 0.72))
+    for i in range(1, len(wrist_trail)):
+        add_trail_capsule(scene, wrist_trail[i - 1], wrist_trail[i], 0.004, (0.05, 0.45, 1.0, 0.46))
+    for i in range(0, min(len(head_trail), len(wrist_trail)), SHAFT_SNAPSHOT_STRIDE):
+        add_trail_capsule(scene, wrist_trail[i], head_trail[i], 0.003, (0.05, 0.05, 0.05, 0.28))
 
 
 if __name__ == "__main__":
@@ -95,7 +210,11 @@ if __name__ == "__main__":
     ball_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "ball")
     ball_geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "golf_ball")
     club_head_geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "club_head_geom")
-    club_tip_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "club_tip")
+    shoulder_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "shoulder_site")
+    wrist_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "wrist_site")
+    plane_point, plane_normal = swing_plane_from_setup(data, shoulder_site_id, ball_id)
+    if args.force_plane:
+        print("FORCE-PLANE MODE ENABLED: clubhead and shaft are being guided onto the blue swing plane.")
 
     with mujoco.viewer.launch_passive(model, data) as viewer:
         step = 0
@@ -104,18 +223,38 @@ if __name__ == "__main__":
         impact_club_vx = 0.0
         post_impact_distance = 0.0
         post_impact_max_ball_vx = 0.0
-        previous_tip_pos = data.site_xpos[club_tip_id].copy()
+        previous_head_pos = data.geom_xpos[club_head_geom_id].copy()
+        previous_wrist_pos = data.site_xpos[wrist_site_id].copy()
         previous_ball_pos = data.xpos[ball_id].copy()
+        head_trail = [previous_head_pos.copy()]
+        wrist_trail = [data.site_xpos[wrist_site_id].copy()]
 
         while viewer.is_running():
             ctrl_energy = apply_pd_controls(data, candidate, step)
             target = target_angles(candidate, step)
+            if args.force_plane:
+                apply_plane_lock(
+                    model,
+                    data,
+                    plane_point,
+                    plane_normal,
+                    club_head_geom_id,
+                    wrist_site_id,
+                    previous_head_pos,
+                    previous_wrist_pos,
+                )
             mujoco.mj_step(model, data)
 
-            tip_pos = data.site_xpos[club_tip_id]
+            head_pos = data.geom_xpos[club_head_geom_id]
+            wrist_pos = data.site_xpos[wrist_site_id]
             ball_pos = data.xpos[ball_id]
-            club_velocity = (tip_pos - previous_tip_pos) / model.opt.timestep
+            club_velocity = (head_pos - previous_head_pos) / model.opt.timestep
             ball_velocity = (ball_pos - previous_ball_pos) / model.opt.timestep
+            if step % TRAIL_STRIDE == 0:
+                head_trail.append(head_pos.copy())
+                wrist_trail.append(wrist_pos.copy())
+                head_trail = head_trail[-MAX_TRAIL_POINTS:]
+                wrist_trail = wrist_trail[-MAX_TRAIL_POINTS:]
 
             if club_hit_ball(data, club_head_geom_id, ball_geom_id) and first_hit_step is None:
                 first_hit_step = step
@@ -160,7 +299,9 @@ if __name__ == "__main__":
                     round(ctrl_energy, 2),
                 )
 
-            previous_tip_pos = tip_pos.copy()
+            draw_club_trails(viewer.user_scn, head_trail, wrist_trail)
+            previous_head_pos = head_pos.copy()
+            previous_wrist_pos = wrist_pos.copy()
             previous_ball_pos = ball_pos.copy()
             viewer.sync()
             step += 1

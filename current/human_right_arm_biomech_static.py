@@ -33,22 +33,22 @@ HAND_SIGNS = {
     "right": -1.0,
 }
 
-SHOULDER_TURN_RANGE_DEG = (-110.0, 110.0)
-SHOULDER_LIFT_RANGE_DEG = (-150.0, 150.0)
-SHOULDER_TWIST_RANGE_DEG = (-90.0, 90.0)
+SHOULDER_TURN_RANGE_DEG = (-95.0, 95.0)
+SHOULDER_LIFT_RANGE_DEG = (-115.0, 115.0)
+SHOULDER_TWIST_RANGE_DEG = (-65.0, 65.0)
 ELBOW_FLEX_RANGE_DEG = (0.0, 45.0)
-WRIST_COCK_RANGE_DEG = (-80.0, 80.0)
-WRIST_DEVIATION_RANGE_DEG = (-55.0, 55.0)
-WRIST_ROLL_RANGE_DEG = (-95.0, 95.0)
+WRIST_COCK_RANGE_DEG = (-70.0, 70.0)
+WRIST_DEVIATION_RANGE_DEG = (-35.0, 35.0)
+WRIST_ROLL_RANGE_DEG = (-70.0, 70.0)
 
 CTRL_LIMITS = {
-    "shoulder_turn": 9.0,
-    "shoulder_lift": 12.0,
-    "shoulder_long_axis_twist": 8.0,
-    "elbow_flex": 6.0,
-    "wrist_cock": 5.0,
-    "wrist_deviation": 4.0,
-    "wrist_roll": 4.0,
+    "shoulder_turn": 7.5,
+    "shoulder_lift": 9.0,
+    "shoulder_long_axis_twist": 6.0,
+    "elbow_flex": 4.5,
+    "wrist_cock": 3.5,
+    "wrist_deviation": 2.8,
+    "wrist_roll": 2.8,
 }
 
 
@@ -58,6 +58,55 @@ def deg(value):
 
 def format_vec(values):
     return " ".join(f"{value:.6f}" for value in values)
+
+
+def normalize_vec(values):
+    length = math.sqrt(sum(value * value for value in values))
+    if length < 1e-9:
+        return (1.0, 0.0, 0.0)
+    return tuple(value / length for value in values)
+
+
+def cross_vec(a, b):
+    return (
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
+
+
+def matrix_columns_to_quat(x_axis, y_axis, z_axis):
+    # MuJoCo expects the body/geom xmat in row-major order. These axes are the
+    # world directions of the local x, y, and z axes.
+    m00, m01, m02 = x_axis[0], y_axis[0], z_axis[0]
+    m10, m11, m12 = x_axis[1], y_axis[1], z_axis[1]
+    m20, m21, m22 = x_axis[2], y_axis[2], z_axis[2]
+    trace = m00 + m11 + m22
+    if trace > 0.0:
+        s = math.sqrt(trace + 1.0) * 2.0
+        qw = 0.25 * s
+        qx = (m21 - m12) / s
+        qy = (m02 - m20) / s
+        qz = (m10 - m01) / s
+    elif m00 > m11 and m00 > m22:
+        s = math.sqrt(1.0 + m00 - m11 - m22) * 2.0
+        qw = (m21 - m12) / s
+        qx = 0.25 * s
+        qy = (m01 + m10) / s
+        qz = (m02 + m20) / s
+    elif m11 > m22:
+        s = math.sqrt(1.0 + m11 - m00 - m22) * 2.0
+        qw = (m02 - m20) / s
+        qx = (m01 + m10) / s
+        qy = 0.25 * s
+        qz = (m12 + m21) / s
+    else:
+        s = math.sqrt(1.0 + m22 - m00 - m11) * 2.0
+        qw = (m10 - m01) / s
+        qx = (m02 + m20) / s
+        qy = (m12 + m21) / s
+        qz = 0.25 * s
+    return normalize_vec((qw, qx, qy, qz))
 
 
 def normalize_hand(hand):
@@ -103,6 +152,34 @@ def setup_positions(hand=DEFAULT_HAND):
     wrist = tuple(elbow[i] + forearm[i] for i in range(3))
     tip = tuple(wrist[i] + club[i] for i in range(3))
     return shoulder, elbow, wrist, tip
+
+
+def swing_plane_visual_xml(shoulder):
+    target_axis = (1.0, 0.0, 0.0)
+    shoulder_to_ball = (
+        ball_x - shoulder[0],
+        -shoulder[1],
+        ball_z - shoulder[2],
+    )
+    plane_depth_axis = normalize_vec(
+        (
+            0.0,
+            shoulder_to_ball[1],
+            shoulder_to_ball[2],
+        )
+    )
+    plane_normal = normalize_vec(cross_vec(target_axis, plane_depth_axis))
+    plane_depth_axis = normalize_vec(cross_vec(plane_normal, target_axis))
+    quat = matrix_columns_to_quat(target_axis, plane_depth_axis, plane_normal)
+    center = (
+        ball_x + 0.28,
+        0.5 * shoulder[1],
+        0.5 * (ball_z + shoulder[2]),
+    )
+    return f"""
+    <geom name="target_swing_plane_visual" type="box" pos="{format_vec(center)}" quat="{format_vec(quat)}" size="0.900 0.900 0.002" rgba="0.1 0.55 1 0.16" contype="0" conaffinity="0"/>
+    <geom name="target_swing_plane_centerline" type="capsule" fromto="{ball_x - 0.500:.6f} 0 {ball_z:.6f} {ball_x + 1.100:.6f} 0 {ball_z:.6f}" size="0.004" rgba="0.1 0.55 1 0.75" contype="0" conaffinity="0"/>
+"""
 
 
 def axis_visuals_xml():
@@ -153,6 +230,7 @@ def build_static_xml(
   <worldbody>
     <geom name="floor" type="plane" pos="0 0 0.235" size="8 8 0.1" rgba="0.8 0.9 0.8 1"/>
     {axis_visuals_xml()}
+    {swing_plane_visual_xml(shoulder)}
 
     <body name="shoulder_turn_frame" pos="{format_vec(shoulder)}">
       <inertial mass="0.001" pos="0 0 0" diaginertia="0.000001 0.000001 0.000001"/>
@@ -188,6 +266,7 @@ def build_static_xml(
                 <geom name="wrist_hemisphere_reference" type="sphere" pos="0 0 0" size="0.075" rgba="0.1 0.8 1 0.18" contype="0" conaffinity="0"/>
                 <geom name="club_shaft_geom" type="capsule" fromto="0 0 0 0 0 -{club_len:.6f}" size="0.012" mass="{preset["shaft_mass"]:.6f}" rgba="0.1 0.1 0.1 1" contype="0" conaffinity="0"/>
                 {club_head_xml}
+                <site name="clubhead" pos="0 0 -{club_len:.6f}" size="0.012" rgba="1 0.85 0 0.85"/>
                 <site name="club_tip" pos="0 0 -{club_len:.6f}" size="0.01" rgba="1 0 0 0.55"/>
                 <site name="club_face_center" pos="0 0 -{club_len:.6f}" size="0.012" rgba="0 0.6 1 0.7"/>
               </body>
