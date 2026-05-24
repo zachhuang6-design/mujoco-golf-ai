@@ -27,6 +27,8 @@ At a high level, the project explores three questions:
 
 ## Project Structure
 
+- `best_model/`: restored snapshot of the commit that produced the best swing
+  results so far.
 - `current/`: the active working version of the simulator.
 - `current/golf_core/`: the current biomechanical model and working swing
   controller.
@@ -41,6 +43,13 @@ To view the current working swing:
 ```bash
 cd current
 mjpython current_swing.py --club 7iron --hand right
+```
+
+To view the known-best historical swing:
+
+```bash
+cd best_model
+mjpython human_right_arm_biomech_swing.py --club 7iron --hand right
 ```
 
 For the most up-to-date commands and project notes, see:

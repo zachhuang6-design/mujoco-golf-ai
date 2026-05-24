@@ -13,7 +13,7 @@ cd /path/to/mujoco-test/current
 ## 2. Create The DGX Venv
 
 ```bash
-bash setup_dgx_venv.sh
+bash dgx/setup_dgx_venv.sh
 ```
 
 Then activate it:

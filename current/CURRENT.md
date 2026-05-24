@@ -25,6 +25,18 @@ This folder has been reorganized around the current working path:
 mjpython current_swing.py --club 7iron --hand right
 ```
 
+## Known-Best Historical Version
+
+The best-performing older commit has been restored outside this folder:
+
+```bash
+cd ../best_model
+mjpython human_right_arm_biomech_swing.py --club 7iron --hand right
+```
+
+Use `../best_model` as the known-good reference if the newer experiments get
+too noisy.
+
 ## Current Residual RL Training
 
 ```bash
@@ -36,6 +48,14 @@ mjpython current_swing.py --club 7iron --hand right
   --device cpu \
   --model-dir artifacts/trained_models/residual_stage1_local \
   --log-dir artifacts/runs/sac_residual_stage1_local
+```
+
+## DGX Setup
+
+DGX setup files are grouped in `dgx/`:
+
+```bash
+bash dgx/setup_dgx_venv.sh
 ```
 
 ## Evaluate

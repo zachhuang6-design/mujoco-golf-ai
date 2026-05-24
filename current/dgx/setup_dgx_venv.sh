@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="${PROJECT_DIR}/.venv-dgx"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
@@ -14,7 +14,7 @@ source "${VENV_DIR}/bin/activate"
 python -m pip install --upgrade pip setuptools wheel
 
 echo "Installing golf RL dependencies"
-python -m pip install -r golf_rl/requirements-dgx.txt
+python -m pip install -r dgx/requirements-dgx.txt
 
 echo
 echo "Checking PyTorch / CUDA visibility"
