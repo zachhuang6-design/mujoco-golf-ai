@@ -1,71 +1,50 @@
-# Golf RL Pipeline
+# MuJoCo Golf Swing AI
 
-This folder replaces the retired hand-rolled RL experiment with a standard
-Gymnasium + Stable-Baselines3 workflow.
+This project explores reinforcement learning under data scarcity. Detailed golf
+swing datasets are difficult to access, so I use simulation to create training
+environments where AI models can learn, test, and improve swing decisions with
+limited real-world data. The same challenge appears in financial modeling,
+sports business, and policy-making, where data is often private, incomplete, or
+noisy, but decision-makers still need models that can reason through uncertainty
+and search for better outcomes.
 
-## Install
+This project is a physics-based golf swing simulator. It uses MuJoCo to model a
+simple golfer arm, wrist, golf club, tee, and ball, then tests how different
+joint motions change the swing and the strike.
 
-```bash
-../.venv/bin/python -m pip install -r golf_rl/requirements.txt
-```
+The long-term goal is to build toward a more realistic golf swing model. The
+project currently focuses on a one-arm swing that can be replayed, measured, and
+improved through optimization or AI training. Over time, this can grow into a
+more complete body model with two arms, torso rotation, hips, legs, and more
+realistic club behavior.
 
-For DGX Spark / CUDA setup, see `golf_rl/DGX_SETUP.md` and run:
+At a high level, the project explores three questions:
 
-```bash
-bash setup_dgx_venv.sh
-```
+- Can a simulated arm move a golf club in a believable swing pattern?
+- Can the club make strong, clean contact with the ball?
+- Can training methods improve speed, direction, contact quality, and swing
+  shape over time?
 
-## Quick Checks
+## Project Structure
 
-```bash
-../.venv/bin/python -m golf_rl.reward_debug --club 7iron --hand right --episodes 3
-../.venv/bin/python -m golf_rl.train_sac --club 7iron --hand right --check-env --timesteps 10000
-```
+- `current/`: the active working version of the simulator.
+- `current/golf_core/`: the current biomechanical model and working swing
+  controller.
+- `current/golf_rl/`: AI training and evaluation tools.
+- `current/legacy/`: older experiments kept for reference.
+- `current/artifacts/`: saved training outputs and model files.
 
-## Main Training
+## Current Starting Point
 
-Recommended next run: residual SAC. This starts from the working CEM/PD swing
-and learns torque corrections instead of trying to invent a full golf swing
-from raw torque exploration.
-
-```bash
-../.venv/bin/python -m golf_rl.train_sac --env residual --club 7iron --hand right --timesteps 1000000 --model-dir artifacts/trained_models/residual_stage1 --log-dir artifacts/runs/sac_residual_stage1
-```
-
-Raw torque SAC is still available, but it is currently much harder and should
-not be the main path until the residual learner is working:
-
-```bash
-../.venv/bin/python -m golf_rl.train_sac --club 7iron --hand right --timesteps 1000000
-```
-
-PPO comparison:
+To view the current working swing:
 
 ```bash
-../.venv/bin/python -m golf_rl.train_ppo --club 7iron --hand right --timesteps 1000000
+cd current
+mjpython current_swing.py --club 7iron --hand right
 ```
 
-## Evaluate And Watch
+For the most up-to-date commands and project notes, see:
 
 ```bash
-../.venv/bin/python -m golf_rl.evaluate_policy artifacts/trained_models/residual_stage1/best_model.zip --env residual --algo sac
-../.venv/bin/python -m golf_rl.visualize_policy artifacts/trained_models/residual_stage1/best_model.zip --env residual --algo sac
+current/CURRENT.md
 ```
-
-## Current Curriculum Stage
-
-This is Stage B/C: real backswing before contact, then valid impact.
-
-The reward intentionally requires:
-
-- backswing arc, depth behind the ball, and height before impact can count
-- no reward for tiny early taps
-- valid impact speed and positive target-line clubhead velocity
-- path error penalty at impact
-- ground-contact penalty
-- action and action-smoothness penalties
-- swing-plane shaping
-
-Face/path/center/attack-angle terms are present in the environment and reward
-decomposition. Path error is now active; face, center, and attack angle can be
-turned up after the policy reliably makes powerful valid contact.
