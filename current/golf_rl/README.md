@@ -9,6 +9,12 @@ Gymnasium + Stable-Baselines3 workflow.
 ../.venv/bin/python -m pip install -r golf_rl/requirements.txt
 ```
 
+For DGX Spark / CUDA setup, see `golf_rl/DGX_SETUP.md` and run:
+
+```bash
+bash setup_dgx_venv.sh
+```
+
 ## Quick Checks
 
 ```bash
@@ -51,4 +57,3 @@ The reward intentionally focuses on:
 Face/path/center/attack-angle terms are present in the environment and reward
 decomposition, but their weights are currently zero in the club config files.
 Turn them on after a policy can reliably make contact.
-
