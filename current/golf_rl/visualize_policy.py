@@ -28,8 +28,15 @@ def main():
             if info.get("ball_contact") and not printed_impact:
                 printed_impact = True
                 print("ball contact")
+                print("valid_impact:", bool(info.get("valid_impact", False)))
                 print("clubhead_speed:", round(float(info.get("clubhead_speed", 0.0)), 4))
+                print("forward_velocity:", round(float(info.get("forward_velocity", 0.0)), 4))
+                print("path_error:", round(float(info.get("path_error", 0.0)), 4))
                 print("plane_error:", round(float(info.get("plane_error", 0.0)), 4))
+                print("backswing_completed:", bool(info.get("backswing_completed", False)))
+                print("backswing_arc:", round(float(info.get("backswing_arc", 0.0)), 4))
+                print("max_backswing_depth:", round(float(info.get("max_backswing_depth", 0.0)), 4))
+                print("max_backswing_height:", round(float(info.get("max_backswing_height", 0.0)), 4))
                 print("reward:", round(float(reward), 4))
             viewer.sync()
             time.sleep(env.model.opt.timestep * args.speed)

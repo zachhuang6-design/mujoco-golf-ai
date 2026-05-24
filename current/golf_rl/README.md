@@ -43,17 +43,18 @@ PPO comparison:
 
 ## Current Curriculum Stage
 
-This is Stage A: reliable contact.
+This is Stage B/C: real backswing before contact, then valid impact.
 
-The reward intentionally focuses on:
+The reward intentionally requires:
 
-- progress toward the ball
-- clubhead speed
-- first ball contact bonus
+- backswing arc, depth behind the ball, and height before impact can count
+- no reward for tiny early taps
+- valid impact speed and positive target-line clubhead velocity
+- path error penalty at impact
 - ground-contact penalty
 - action and action-smoothness penalties
-- light swing-plane shaping
+- swing-plane shaping
 
 Face/path/center/attack-angle terms are present in the environment and reward
-decomposition, but their weights are currently zero in the club config files.
-Turn them on after a policy can reliably make contact.
+decomposition. Path error is now active; face, center, and attack angle can be
+turned up after the policy reliably makes powerful valid contact.

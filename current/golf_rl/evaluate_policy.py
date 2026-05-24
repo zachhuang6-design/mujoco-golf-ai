@@ -57,17 +57,47 @@ def main():
         done = False
         total = 0.0
         final_info = {}
+        impact_info = None
         while not done:
             action, _ = model.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, info = env.step(action)
             total += reward
             final_info = info
+            if info.get("ball_contact") and impact_info is None:
+                impact_info = dict(info)
             done = terminated or truncated
         rewards.append(total)
-        print("episode", episode + 1, "reward", round(total, 4), "impact", final_info.get("impact_happened"))
-        for key in ("clubhead_speed", "plane_error", "distance_to_ball", "ball_contact_reward"):
-            if key in final_info:
-                print(" ", key, round(float(final_info[key]), 4))
+        report_info = impact_info or final_info
+        print(
+            "episode",
+            episode + 1,
+            "reward",
+            round(total, 4),
+            "impact",
+            final_info.get("impact_happened"),
+            "valid",
+            report_info.get("valid_impact"),
+        )
+        for key in (
+            "clubhead_speed",
+            "forward_velocity",
+            "path_error",
+            "plane_error",
+            "distance_to_ball",
+            "backswing_completed",
+            "max_backswing_depth",
+            "max_backswing_height",
+            "backswing_arc",
+            "ball_contact_reward",
+            "valid_impact_bonus",
+            "weak_contact_penalty",
+        ):
+            if key in report_info:
+                value = report_info[key]
+                if isinstance(value, (bool, np.bool_)):
+                    print(" ", key, bool(value))
+                else:
+                    print(" ", key, round(float(value), 4))
     print("mean_reward", round(float(np.mean(rewards)), 4))
 
 

@@ -26,8 +26,14 @@ def make_reward_logger(BaseCallback):
                 for key, value in infos[0].items():
                     if key.endswith("_reward") or key.endswith("_penalty") or key in (
                         "clubhead_speed",
+                        "forward_velocity",
+                        "path_error",
                         "plane_error",
                         "distance_to_ball",
+                        "backswing_arc",
+                        "max_backswing_depth",
+                        "max_backswing_height",
+                        "valid_impact",
                     ):
                         try:
                             self.logger.record(f"reward_terms/{key}", float(value))

@@ -25,10 +25,14 @@ from human_right_arm_biomech_static import (
 
 DEFAULT_REWARD_CONFIG = {
     "impact": {
-        "contact_bonus": 10.0,
-        "speed_weight": 0.50,
+        "contact_bonus": 45.0,
+        "speed_weight": 2.50,
+        "min_valid_speed": 10.0,
+        "min_forward_velocity": 4.0,
+        "max_valid_path_error_deg": 45.0,
+        "weak_contact_penalty": 35.0,
         "face_weight": 0.0,
-        "path_weight": 0.0,
+        "path_weight": 3.0,
         "center_weight": 0.0,
         "attack_angle_target_deg": -3.0,
         "attack_angle_weight": 0.0,
@@ -39,23 +43,28 @@ DEFAULT_REWARD_CONFIG = {
         "target_line_weight": 0.0,
     },
     "shaping": {
-        "progress_weight": 0.12,
-        "downswing_progress_weight": 0.65,
-        "speed_weight": 0.006,
-        "plane_weight": 0.04,
+        "progress_weight": 0.02,
+        "downswing_progress_weight": 1.20,
+        "speed_weight": 0.0,
+        "downswing_speed_weight": 0.05,
+        "plane_weight": 0.08,
         "action_weight": 0.001,
         "smoothness_weight": 0.002,
         "joint_comfort_weight": 0.18,
         "joint_velocity_weight": 0.004,
         "ground_penalty": 5.0,
-        "no_contact_penalty": 15.0,
-        "backswing_arc_weight": 0.08,
-        "backswing_away_weight": 0.60,
-        "backswing_completion_bonus": 3.0,
-        "early_contact_penalty": 18.0,
-        "min_backswing_arc": 0.55,
-        "min_backswing_away": 0.20,
-        "min_contact_step": 120.0,
+        "no_contact_penalty": 30.0,
+        "backswing_arc_weight": 1.60,
+        "backswing_away_weight": 2.00,
+        "backswing_depth_weight": 8.00,
+        "backswing_height_weight": 4.00,
+        "backswing_completion_bonus": 18.0,
+        "early_contact_penalty": 50.0,
+        "min_backswing_arc": 0.95,
+        "min_backswing_away": 0.45,
+        "min_backswing_depth": 0.32,
+        "min_backswing_height": 0.18,
+        "min_contact_step": 180.0,
     },
 }
 
@@ -179,11 +188,16 @@ class GolfSwingEnv(gym.Env):
         self.address_clubhead_pos = np.zeros(3, dtype=np.float64)
         self.backswing_arc = 0.0
         self.max_backswing_away = 0.0
+        self.max_backswing_depth = 0.0
+        self.max_backswing_height = 0.0
         self.prev_backswing_arc_credit = 0.0
         self.prev_backswing_away_credit = 0.0
+        self.prev_backswing_depth_credit = 0.0
+        self.prev_backswing_height_credit = 0.0
         self.backswing_completed = False
         self.backswing_bonus_paid = False
         self.early_contact = False
+        self.valid_impact = False
         self.plane_point = np.zeros(3, dtype=np.float64)
         self.plane_normal = np.array([0.0, 1.0, 0.0], dtype=np.float64)
         self.last_reward_terms = {}
@@ -241,11 +255,16 @@ class GolfSwingEnv(gym.Env):
         self._refresh_reference_state()
         self.backswing_arc = 0.0
         self.max_backswing_away = 0.0
+        self.max_backswing_depth = 0.0
+        self.max_backswing_height = 0.0
         self.prev_backswing_arc_credit = 0.0
         self.prev_backswing_away_credit = 0.0
+        self.prev_backswing_depth_credit = 0.0
+        self.prev_backswing_height_credit = 0.0
         self.backswing_completed = False
         self.backswing_bonus_paid = False
         self.early_contact = False
+        self.valid_impact = False
         self.last_reward_terms = {}
         return self._get_obs(), self._get_info()
 
@@ -323,6 +342,8 @@ class GolfSwingEnv(gym.Env):
                 self.step_count / max(1, self.max_steps),
                 self.backswing_arc / max(1e-6, shaping["min_backswing_arc"]),
                 self.max_backswing_away / max(1e-6, shaping["min_backswing_away"]),
+                self.max_backswing_depth / max(1e-6, shaping["min_backswing_depth"]),
+                self.max_backswing_height / max(1e-6, shaping["min_backswing_height"]),
                 1.0 if self.backswing_completed else 0.0,
             ],
             dtype=np.float64,
@@ -351,15 +372,21 @@ class GolfSwingEnv(gym.Env):
         clubhead_pos = self._clubhead_pos()
         step_arc = float(np.linalg.norm(clubhead_pos - self.prev_clubhead_pos))
         away = float(np.linalg.norm(clubhead_pos - self.address_clubhead_pos))
+        depth = max(0.0, float(self.address_clubhead_pos[0] - clubhead_pos[0]))
+        height = max(0.0, float(clubhead_pos[2] - self.address_clubhead_pos[2]))
         if not self.impact_happened:
             self.backswing_arc += step_arc
             self.max_backswing_away = max(self.max_backswing_away, away)
+            self.max_backswing_depth = max(self.max_backswing_depth, depth)
+            self.max_backswing_height = max(self.max_backswing_height, height)
 
         shaping = self.reward_config["shaping"]
         if (
             not self.backswing_completed
             and self.backswing_arc >= shaping["min_backswing_arc"]
             and self.max_backswing_away >= shaping["min_backswing_away"]
+            and self.max_backswing_depth >= shaping["min_backswing_depth"]
+            and self.max_backswing_height >= shaping["min_backswing_height"]
             and self.step_count >= int(shaping["min_contact_step"])
         ):
             self.backswing_completed = True
@@ -379,12 +406,15 @@ class GolfSwingEnv(gym.Env):
         ball_contact = self._detect_ball_contact()
         ground_contact = self._detect_ground_contact()
         early_contact = ball_contact and not self.backswing_completed
+        path_error = self._club_path_error()
+        forward_velocity = self._clubhead_forward_velocity()
 
         if self.backswing_completed:
             progress_reward = shaping["downswing_progress_weight"] * progress
         else:
             progress_reward = shaping["progress_weight"] * min(0.0, progress)
-        speed_reward = shaping["speed_weight"] * clubhead_speed
+        speed_weight_key = "downswing_speed_weight" if self.backswing_completed else "speed_weight"
+        speed_reward = shaping[speed_weight_key] * clubhead_speed
         backswing_arc_credit = min(
             self.backswing_arc,
             shaping["min_backswing_arc"],
@@ -392,6 +422,14 @@ class GolfSwingEnv(gym.Env):
         backswing_away_credit = min(
             self.max_backswing_away,
             shaping["min_backswing_away"],
+        )
+        backswing_depth_credit = min(
+            self.max_backswing_depth,
+            shaping["min_backswing_depth"],
+        )
+        backswing_height_credit = min(
+            self.max_backswing_height,
+            shaping["min_backswing_height"],
         )
         backswing_arc_reward = shaping["backswing_arc_weight"] * max(
             0.0,
@@ -401,8 +439,18 @@ class GolfSwingEnv(gym.Env):
             0.0,
             backswing_away_credit - self.prev_backswing_away_credit,
         )
+        backswing_depth_reward = shaping["backswing_depth_weight"] * max(
+            0.0,
+            backswing_depth_credit - self.prev_backswing_depth_credit,
+        )
+        backswing_height_reward = shaping["backswing_height_weight"] * max(
+            0.0,
+            backswing_height_credit - self.prev_backswing_height_credit,
+        )
         self.prev_backswing_arc_credit = backswing_arc_credit
         self.prev_backswing_away_credit = backswing_away_credit
+        self.prev_backswing_depth_credit = backswing_depth_credit
+        self.prev_backswing_height_credit = backswing_height_credit
         backswing_completion_bonus = 0.0
         if self.backswing_completed and not self.backswing_bonus_paid:
             backswing_completion_bonus = shaping["backswing_completion_bonus"]
@@ -421,8 +469,10 @@ class GolfSwingEnv(gym.Env):
         early_contact_penalty = shaping["early_contact_penalty"] if early_contact else 0.0
         ball_contact_reward = 0.0
         impact_speed_reward = 0.0
+        weak_contact_penalty = 0.0
+        valid_impact_bonus = 0.0
         face_penalty = 0.0
-        path_penalty = 0.0
+        path_penalty = impact_cfg["path_weight"] * path_error if ball_contact else 0.0
         center_penalty = 0.0
         attack_penalty = 0.0
 
@@ -430,26 +480,31 @@ class GolfSwingEnv(gym.Env):
             self.impact_happened = True
             self.impact_step = self.step_count
             self.early_contact = early_contact
-            if not early_contact:
+            self.valid_impact = self._impact_is_valid(clubhead_speed, forward_velocity, path_error, early_contact)
+            if self.valid_impact:
                 face_error = self._face_angle_error()
-                path_error = self._club_path_error()
                 center_error = self._center_strike_error()
                 attack_error = self._attack_angle_error(impact_cfg["attack_angle_target_deg"])
                 ball_contact_reward = impact_cfg["contact_bonus"]
                 impact_speed_reward = impact_cfg["speed_weight"] * clubhead_speed
+                valid_impact_bonus = impact_cfg["contact_bonus"]
                 face_penalty = impact_cfg["face_weight"] * face_error
-                path_penalty = impact_cfg["path_weight"] * path_error
                 center_penalty = impact_cfg["center_weight"] * center_error
                 attack_penalty = impact_cfg["attack_angle_weight"] * attack_error
+            else:
+                weak_contact_penalty = impact_cfg["weak_contact_penalty"]
 
         reward = (
             progress_reward
             + speed_reward
             + backswing_arc_reward
             + backswing_away_reward
+            + backswing_depth_reward
+            + backswing_height_reward
             + backswing_completion_bonus
             + ball_contact_reward
             + impact_speed_reward
+            + valid_impact_bonus
             - plane_penalty
             - action_penalty
             - smoothness_penalty
@@ -458,6 +513,7 @@ class GolfSwingEnv(gym.Env):
             - ground_penalty
             - no_contact_penalty
             - early_contact_penalty
+            - weak_contact_penalty
             - face_penalty
             - path_penalty
             - center_penalty
@@ -468,12 +524,16 @@ class GolfSwingEnv(gym.Env):
             "speed_reward": speed_reward,
             "backswing_arc_reward": backswing_arc_reward,
             "backswing_away_reward": backswing_away_reward,
+            "backswing_depth_reward": backswing_depth_reward,
+            "backswing_height_reward": backswing_height_reward,
             "backswing_completion_bonus": backswing_completion_bonus,
             "ball_contact_reward": ball_contact_reward,
             "impact_speed_reward": impact_speed_reward,
+            "valid_impact_bonus": valid_impact_bonus,
             "ground_penalty": ground_penalty,
             "no_contact_penalty": no_contact_penalty,
             "early_contact_penalty": early_contact_penalty,
+            "weak_contact_penalty": weak_contact_penalty,
             "action_penalty": action_penalty,
             "smoothness_penalty": smoothness_penalty,
             "joint_comfort_penalty": joint_comfort_penalty,
@@ -484,11 +544,16 @@ class GolfSwingEnv(gym.Env):
             "center_penalty": center_penalty,
             "attack_penalty": attack_penalty,
             "clubhead_speed": clubhead_speed,
+            "forward_velocity": forward_velocity,
+            "path_error": path_error,
             "plane_error": plane_error,
             "distance_to_ball": distance_to_ball,
             "backswing_arc": self.backswing_arc,
             "max_backswing_away": self.max_backswing_away,
+            "max_backswing_depth": self.max_backswing_depth,
+            "max_backswing_height": self.max_backswing_height,
             "backswing_completed": self.backswing_completed,
+            "valid_impact": self.valid_impact,
             "early_contact": self.early_contact,
             "ball_contact": ball_contact,
             "ground_contact": ground_contact,
@@ -503,6 +568,7 @@ class GolfSwingEnv(gym.Env):
         return {
             "step": self.step_count,
             "impact_happened": self.impact_happened,
+            "valid_impact": self.valid_impact,
             "contact_names": self._contact_names(),
         }
 
@@ -536,6 +602,9 @@ class GolfSwingEnv(gym.Env):
 
     def _clubhead_to_ball_distance(self):
         return float(np.linalg.norm(self._clubhead_pos() - self._ball_pos()))
+
+    def _clubhead_forward_velocity(self):
+        return float(self.clubhead_velocity[0])
 
     def _point_plane_signed_distance(self, point):
         return float(np.dot(point - self.plane_point, self.plane_normal))
@@ -583,6 +652,16 @@ class GolfSwingEnv(gym.Env):
 
     def _detect_ground_contact(self):
         return self._detect_contact("club_head_geom", "floor") or self._detect_contact("club_shaft_geom", "floor")
+
+    def _impact_is_valid(self, clubhead_speed, forward_velocity, path_error, early_contact):
+        impact_cfg = self.reward_config["impact"]
+        return (
+            not early_contact
+            and self.backswing_completed
+            and clubhead_speed >= impact_cfg["min_valid_speed"]
+            and forward_velocity >= impact_cfg["min_forward_velocity"]
+            and path_error <= math.radians(float(impact_cfg["max_valid_path_error_deg"]))
+        )
 
     def _contact_names(self):
         names = []
