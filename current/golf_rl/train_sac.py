@@ -4,11 +4,26 @@ from pathlib import Path
 from golf_rl.envs import GolfResidualSwingEnv, GolfSwingEnv
 
 
-def make_env(env_name, club, hand):
+def make_env(
+    env_name,
+    club,
+    hand,
+    residual_scale=0.12,
+    target_tracking_weight=0.015,
+    early_turn_reward_weight=1.5,
+    early_lift_penalty_weight=2.0,
+):
     if env_name == "raw":
         return GolfSwingEnv(club_type=club, hand=hand)
     if env_name == "residual":
-        return GolfResidualSwingEnv(club_type=club, hand=hand)
+        return GolfResidualSwingEnv(
+            club_type=club,
+            hand=hand,
+            residual_scale=residual_scale,
+            target_tracking_weight=target_tracking_weight,
+            early_turn_reward_weight=early_turn_reward_weight,
+            early_lift_penalty_weight=early_lift_penalty_weight,
+        )
     raise ValueError(f"Unknown env '{env_name}'. Use raw or residual.")
 
 
@@ -34,14 +49,23 @@ def make_reward_logger(BaseCallback):
                 for key, value in infos[0].items():
                     if key.endswith("_reward") or key.endswith("_penalty") or key in (
                         "clubhead_speed",
-                        "forward_velocity",
-                        "path_error",
+                        "clubhead_x_velocity",
+                        "max_clubhead_x_velocity",
+                        "ball_x_distance",
+                        "max_ball_x_distance",
+                        "ball_height",
+                        "max_ball_height",
                         "plane_error",
+                        "plane_position_error",
+                        "plane_velocity_error",
+                        "plane_phase_multiplier",
+                        "ball_lateral_error",
+                        "ball_lateral_velocity",
+                        "early_shoulder_turn_progress",
+                        "early_shoulder_lift_error_deg",
                         "distance_to_ball",
-                        "backswing_arc",
-                        "max_backswing_depth",
-                        "max_backswing_height",
                         "valid_impact",
+                        "residual_norm",
                     ):
                         try:
                             self.logger.record(f"reward_terms/{key}", float(value))
@@ -59,7 +83,11 @@ def main():
     parser = argparse.ArgumentParser(description="Train SAC on the biomechanical golf swing environment.")
     parser.add_argument("--club", default="7iron")
     parser.add_argument("--hand", default="right")
-    parser.add_argument("--env", choices=("raw", "residual"), default="raw")
+    parser.add_argument("--env", choices=("raw", "residual"), default="residual")
+    parser.add_argument("--residual-scale", type=float, default=0.12)
+    parser.add_argument("--target-tracking-weight", type=float, default=0.015)
+    parser.add_argument("--early-turn-reward-weight", type=float, default=1.5)
+    parser.add_argument("--early-lift-penalty-weight", type=float, default=2.0)
     parser.add_argument("--timesteps", type=int, default=1_000_000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--log-dir", default="artifacts/runs/sac_golf")
@@ -69,11 +97,29 @@ def main():
     args = parser.parse_args()
 
     Path(args.model_dir).mkdir(parents=True, exist_ok=True)
-    env = make_env(args.env, args.club, args.hand)
+    env = make_env(
+        args.env,
+        args.club,
+        args.hand,
+        args.residual_scale,
+        args.target_tracking_weight,
+        args.early_turn_reward_weight,
+        args.early_lift_penalty_weight,
+    )
     if args.check_env:
         check_env(env, warn=True)
     env = Monitor(env)
-    eval_env = Monitor(make_env(args.env, args.club, args.hand))
+    eval_env = Monitor(
+        make_env(
+            args.env,
+            args.club,
+            args.hand,
+            args.residual_scale,
+            args.target_tracking_weight,
+            args.early_turn_reward_weight,
+            args.early_lift_penalty_weight,
+        )
+    )
 
     model = SAC(
         policy="MlpPolicy",

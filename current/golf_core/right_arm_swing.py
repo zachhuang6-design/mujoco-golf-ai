@@ -27,17 +27,17 @@ from golf_core.right_arm_static import (
 
 BIOMECH_SWING_CANDIDATE = {
     "hand": "right",
-    "top_step": 432,
-    "top_hold": 98,
-    "down_start_step": 530,
-    "impact_step": 734,
-    "finish_step": 872,
-    "elbow_lag": 49,
-    "wrist_lag": 99,
+    "top_step": 347,
+    "top_hold": 93,
+    "down_start_step": 440,
+    "impact_step": 670,
+    "finish_step": 747,
+    "elbow_lag": 57,
+    "wrist_lag": 102,
     "address_pose": (0.0000, -0.1309, 0.0000, 0.0000, -0.3927, 0.0000, 0.0000),
-    "top_pose": (-1.4518, -1.3100, -0.7145, 0.7796, -1.2577, 0.1968, -0.2499),
-    "impact_pose": (-0.3300, 0.3142, -0.4022, 0.1465, 0.3033, 0.1727, 0.3793),
-    "finish_pose": (1.0406, 0.9567, 0.4465, 0.1173, 0.4759, -0.3089, 0.3958),
+    "top_pose": (-1.6462, -1.9082, -0.1057, 0.6920, -0.6109, -0.6099, 0.3444),
+    "impact_pose": (0.1327, 0.3020, -0.2100, 0.3104, 0.3047, 0.2676, 0.1631),
+    "finish_pose": (0.8344, 0.6029, 0.8372, 0.3892, 1.1437, 0.3461, 0.7266),
 }
 
 MIN_FORWARD_CLUB_SPEED = 0.50

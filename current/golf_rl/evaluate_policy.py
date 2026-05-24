@@ -6,17 +6,37 @@ import numpy as np
 from golf_rl.envs import GolfResidualSwingEnv, GolfSwingEnv
 
 
-def make_env(env_name, club, hand):
+def make_env(
+    env_name,
+    club,
+    hand,
+    residual_scale=0.12,
+    target_tracking_weight=0.015,
+    early_turn_reward_weight=1.5,
+    early_lift_penalty_weight=2.0,
+):
     if env_name == "raw":
         return GolfSwingEnv(club_type=club, hand=hand)
     if env_name == "residual":
-        return GolfResidualSwingEnv(club_type=club, hand=hand)
+        return GolfResidualSwingEnv(
+            club_type=club,
+            hand=hand,
+            residual_scale=residual_scale,
+            target_tracking_weight=target_tracking_weight,
+            early_turn_reward_weight=early_turn_reward_weight,
+            early_lift_penalty_weight=early_lift_penalty_weight,
+        )
     raise ValueError(f"Unknown env '{env_name}'. Use raw or residual.")
 
 
 def resolve_model_path(path):
     candidate = Path(path)
-    if candidate.exists():
+    if candidate.is_dir():
+        for name in ("best_model.zip", "best_model", "model.zip", "model"):
+            nested = candidate / name
+            if nested.exists() and not nested.is_dir():
+                return str(nested)
+    if candidate.exists() and not candidate.is_dir():
         return str(candidate)
     if candidate.suffix == ".zip":
         without_zip = candidate.with_suffix("")
@@ -54,12 +74,24 @@ def main():
     parser.add_argument("--algo", choices=("sac", "ppo"), default="sac")
     parser.add_argument("--club", default="7iron")
     parser.add_argument("--hand", default="right")
-    parser.add_argument("--env", choices=("raw", "residual"), default="raw")
+    parser.add_argument("--env", choices=("raw", "residual"), default="residual")
+    parser.add_argument("--residual-scale", type=float, default=0.12)
+    parser.add_argument("--target-tracking-weight", type=float, default=0.015)
+    parser.add_argument("--early-turn-reward-weight", type=float, default=1.5)
+    parser.add_argument("--early-lift-penalty-weight", type=float, default=2.0)
     parser.add_argument("--episodes", type=int, default=5)
     args = parser.parse_args()
 
     model = load_model(args.algo, args.model_path)
-    env = make_env(args.env, args.club, args.hand)
+    env = make_env(
+        args.env,
+        args.club,
+        args.hand,
+        args.residual_scale,
+        args.target_tracking_weight,
+        args.early_turn_reward_weight,
+        args.early_lift_penalty_weight,
+    )
     rewards = []
     for episode in range(args.episodes):
         obs, info = env.reset(seed=episode)
@@ -89,17 +121,41 @@ def main():
         )
         for key in (
             "clubhead_speed",
-            "forward_velocity",
-            "path_error",
+            "clubhead_x_velocity",
+            "max_clubhead_x_velocity",
+            "ball_x_distance",
+            "max_ball_x_distance",
+            "ball_height",
+            "max_ball_height",
             "plane_error",
+            "plane_position_error",
+            "plane_velocity_error",
+            "plane_phase_multiplier",
+            "clubhead_plane_distance",
+            "shaft_mid_plane_distance",
+            "wrist_plane_distance",
+            "clubhead_plane_velocity",
+            "shaft_mid_plane_velocity",
+            "wrist_plane_velocity",
+            "ball_lateral_error",
+            "ball_lateral_velocity",
             "distance_to_ball",
-            "backswing_completed",
-            "max_backswing_depth",
-            "max_backswing_height",
-            "backswing_arc",
-            "ball_contact_reward",
-            "valid_impact_bonus",
-            "weak_contact_penalty",
+            "clubhead_x_velocity_reward",
+            "ball_distance_reward",
+            "ball_height_reward",
+            "plane_position_improvement_reward",
+            "plane_velocity_improvement_reward",
+            "plane_position_penalty",
+            "plane_velocity_penalty",
+            "target_line_position_penalty",
+            "target_line_velocity_penalty",
+            "early_shoulder_turn_reward",
+            "early_shoulder_lift_penalty",
+            "early_shoulder_turn_progress",
+            "early_shoulder_lift_error_deg",
+            "target_tracking_penalty",
+            "residual_action_penalty",
+            "residual_norm",
         ):
             if key in report_info:
                 value = report_info[key]

@@ -24,47 +24,34 @@ from golf_core.right_arm_static import (
 
 
 DEFAULT_REWARD_CONFIG = {
-    "impact": {
-        "contact_bonus": 45.0,
-        "speed_weight": 2.50,
-        "min_valid_speed": 10.0,
-        "min_forward_velocity": 4.0,
-        "max_valid_path_error_deg": 45.0,
-        "weak_contact_penalty": 35.0,
-        "face_weight": 0.0,
-        "path_weight": 3.0,
-        "center_weight": 0.0,
-        "attack_angle_target_deg": -3.0,
-        "attack_angle_weight": 0.0,
+    "rewards": {
+        "clubhead_x_velocity_weight": 2.0,
+        "ball_distance_weight": 12.0,
+        "ball_height_weight": 8.0,
+    },
+    "plane": {
+        "position_weight": 18.0,
+        "velocity_weight": 1.2,
+        "position_improvement_weight": 3.0,
+        "velocity_improvement_weight": 0.25,
+        "position_tolerance": 0.025,
+        "velocity_tolerance": 0.75,
+        "barrier_limit": 4.0,
+        "overflow_weight": 12.0,
+        "max_loss": 35.0,
+        "takeaway_multiplier": 3.0,
+        "backswing_multiplier": 1.8,
+        "downswing_multiplier": 1.0,
+        "followthrough_multiplier": 2.6,
     },
     "flight": {
-        "distance_weight": 0.0,
-        "height_weight": 0.0,
-        "target_line_weight": 0.0,
-    },
-    "shaping": {
-        "progress_weight": 0.02,
-        "downswing_progress_weight": 1.20,
-        "speed_weight": 0.0,
-        "downswing_speed_weight": 0.05,
-        "plane_weight": 0.08,
-        "action_weight": 0.001,
-        "smoothness_weight": 0.002,
-        "joint_comfort_weight": 0.18,
-        "joint_velocity_weight": 0.004,
-        "ground_penalty": 5.0,
-        "no_contact_penalty": 30.0,
-        "backswing_arc_weight": 1.60,
-        "backswing_away_weight": 2.00,
-        "backswing_depth_weight": 8.00,
-        "backswing_height_weight": 4.00,
-        "backswing_completion_bonus": 18.0,
-        "early_contact_penalty": 50.0,
-        "min_backswing_arc": 0.95,
-        "min_backswing_away": 0.45,
-        "min_backswing_depth": 0.32,
-        "min_backswing_height": 0.18,
-        "min_contact_step": 180.0,
+        "target_line_position_weight": 14.0,
+        "target_line_velocity_weight": 1.8,
+        "target_line_position_tolerance": 0.08,
+        "target_line_velocity_tolerance": 1.0,
+        "target_line_barrier_limit": 4.0,
+        "target_line_overflow_weight": 5.0,
+        "target_line_max_loss": 25.0,
     },
 }
 
@@ -153,7 +140,7 @@ class GolfSwingEnv(gym.Env):
         hand=DEFAULT_HAND,
         reward_config_path=None,
         max_steps=1000,
-        terminate_after_impact_steps=24,
+        terminate_after_impact_steps=120,
         randomize_setup=False,
     ):
         super().__init__()
@@ -186,6 +173,12 @@ class GolfSwingEnv(gym.Env):
         self.prev_ball_pos = np.zeros(3, dtype=np.float64)
         self.prev_clubhead_dist = 0.0
         self.address_clubhead_pos = np.zeros(3, dtype=np.float64)
+        self.initial_ball_pos = np.zeros(3, dtype=np.float64)
+        self.max_clubhead_x_velocity = 0.0
+        self.max_ball_x_distance = 0.0
+        self.max_ball_height = 0.0
+        self.prev_plane_position_error = 0.0
+        self.prev_plane_velocity_error = 0.0
         self.backswing_arc = 0.0
         self.max_backswing_away = 0.0
         self.max_backswing_depth = 0.0
@@ -252,6 +245,11 @@ class GolfSwingEnv(gym.Env):
         self.clubhead_velocity[:] = 0.0
         self.wrist_velocity[:] = 0.0
         self.ball_velocity[:] = 0.0
+        self.max_clubhead_x_velocity = 0.0
+        self.max_ball_x_distance = 0.0
+        self.max_ball_height = 0.0
+        self.prev_plane_position_error = 0.0
+        self.prev_plane_velocity_error = 0.0
         self._refresh_reference_state()
         self.backswing_arc = 0.0
         self.max_backswing_away = 0.0
@@ -295,7 +293,11 @@ class GolfSwingEnv(gym.Env):
         self._update_swing_plane()
         self._store_previous_positions()
         self.address_clubhead_pos = self._clubhead_pos().copy()
+        self.initial_ball_pos = self._ball_pos().copy()
         self.prev_clubhead_dist = self._clubhead_to_ball_distance()
+        plane_terms = self._club_plane_terms()
+        self.prev_plane_position_error = plane_terms["position_error"]
+        self.prev_plane_velocity_error = plane_terms["velocity_error"]
 
     def _update_velocity_cache(self):
         dt = float(self.model.opt.timestep)
@@ -336,15 +338,12 @@ class GolfSwingEnv(gym.Env):
             ],
             dtype=np.float64,
         )
-        shaping = self.reward_config["shaping"]
         phase_features = np.array(
             [
                 self.step_count / max(1, self.max_steps),
-                self.backswing_arc / max(1e-6, shaping["min_backswing_arc"]),
-                self.max_backswing_away / max(1e-6, shaping["min_backswing_away"]),
-                self.max_backswing_depth / max(1e-6, shaping["min_backswing_depth"]),
-                self.max_backswing_height / max(1e-6, shaping["min_backswing_height"]),
-                1.0 if self.backswing_completed else 0.0,
+                self.max_clubhead_x_velocity / 25.0,
+                self.max_ball_x_distance / 12.0,
+                self.max_ball_height / 2.0,
             ],
             dtype=np.float64,
         )
@@ -380,183 +379,108 @@ class GolfSwingEnv(gym.Env):
             self.max_backswing_depth = max(self.max_backswing_depth, depth)
             self.max_backswing_height = max(self.max_backswing_height, height)
 
-        shaping = self.reward_config["shaping"]
-        if (
-            not self.backswing_completed
-            and self.backswing_arc >= shaping["min_backswing_arc"]
-            and self.max_backswing_away >= shaping["min_backswing_away"]
-            and self.max_backswing_depth >= shaping["min_backswing_depth"]
-            and self.max_backswing_height >= shaping["min_backswing_height"]
-            and self.step_count >= int(shaping["min_contact_step"])
-        ):
-            self.backswing_completed = True
-
     def _compute_reward(self, action, previous_action):
         cfg = self.reward_config
-        shaping = cfg["shaping"]
-        impact_cfg = cfg["impact"]
-
+        reward_cfg = cfg["rewards"]
+        plane_cfg = cfg["plane"]
+        flight_cfg = cfg["flight"]
         distance_to_ball = self._clubhead_to_ball_distance()
-        progress = self.prev_clubhead_dist - distance_to_ball
         self.prev_clubhead_dist = distance_to_ball
         clubhead_speed = float(np.linalg.norm(self.clubhead_velocity))
-        plane_error = self._swing_plane_error()
-        action_cost = float(np.sum(action * action))
-        smoothness_cost = float(np.sum((action - previous_action) ** 2))
         ball_contact = self._detect_ball_contact()
-        ground_contact = self._detect_ground_contact()
-        early_contact = ball_contact and not self.backswing_completed
-        path_error = self._club_path_error()
-        forward_velocity = self._clubhead_forward_velocity()
-
-        if self.backswing_completed:
-            progress_reward = shaping["downswing_progress_weight"] * progress
-        else:
-            progress_reward = shaping["progress_weight"] * min(0.0, progress)
-        speed_weight_key = "downswing_speed_weight" if self.backswing_completed else "speed_weight"
-        speed_reward = shaping[speed_weight_key] * clubhead_speed
-        backswing_arc_credit = min(
-            self.backswing_arc,
-            shaping["min_backswing_arc"],
-        )
-        backswing_away_credit = min(
-            self.max_backswing_away,
-            shaping["min_backswing_away"],
-        )
-        backswing_depth_credit = min(
-            self.max_backswing_depth,
-            shaping["min_backswing_depth"],
-        )
-        backswing_height_credit = min(
-            self.max_backswing_height,
-            shaping["min_backswing_height"],
-        )
-        backswing_arc_reward = shaping["backswing_arc_weight"] * max(
-            0.0,
-            backswing_arc_credit - self.prev_backswing_arc_credit,
-        )
-        backswing_away_reward = shaping["backswing_away_weight"] * max(
-            0.0,
-            backswing_away_credit - self.prev_backswing_away_credit,
-        )
-        backswing_depth_reward = shaping["backswing_depth_weight"] * max(
-            0.0,
-            backswing_depth_credit - self.prev_backswing_depth_credit,
-        )
-        backswing_height_reward = shaping["backswing_height_weight"] * max(
-            0.0,
-            backswing_height_credit - self.prev_backswing_height_credit,
-        )
-        self.prev_backswing_arc_credit = backswing_arc_credit
-        self.prev_backswing_away_credit = backswing_away_credit
-        self.prev_backswing_depth_credit = backswing_depth_credit
-        self.prev_backswing_height_credit = backswing_height_credit
-        backswing_completion_bonus = 0.0
-        if self.backswing_completed and not self.backswing_bonus_paid:
-            backswing_completion_bonus = shaping["backswing_completion_bonus"]
-            self.backswing_bonus_paid = True
-        plane_penalty = shaping["plane_weight"] * plane_error
-        action_penalty = shaping["action_weight"] * action_cost
-        smoothness_penalty = shaping["smoothness_weight"] * smoothness_cost
-        joint_comfort_penalty = shaping["joint_comfort_weight"] * self._joint_comfort_error()
-        joint_velocity_penalty = shaping["joint_velocity_weight"] * self._joint_velocity_error()
-        ground_penalty = shaping["ground_penalty"] if ground_contact else 0.0
-        no_contact_penalty = (
-            shaping["no_contact_penalty"]
-            if self.step_count >= self.max_steps and not self.impact_happened
-            else 0.0
-        )
-        early_contact_penalty = shaping["early_contact_penalty"] if early_contact else 0.0
-        ball_contact_reward = 0.0
-        impact_speed_reward = 0.0
-        weak_contact_penalty = 0.0
-        valid_impact_bonus = 0.0
-        face_penalty = 0.0
-        path_penalty = impact_cfg["path_weight"] * path_error if ball_contact else 0.0
-        center_penalty = 0.0
-        attack_penalty = 0.0
 
         if ball_contact and not self.impact_happened:
             self.impact_happened = True
             self.impact_step = self.step_count
-            self.early_contact = early_contact
-            self.valid_impact = self._impact_is_valid(clubhead_speed, forward_velocity, path_error, early_contact)
-            if self.valid_impact:
-                face_error = self._face_angle_error()
-                center_error = self._center_strike_error()
-                attack_error = self._attack_angle_error(impact_cfg["attack_angle_target_deg"])
-                ball_contact_reward = impact_cfg["contact_bonus"]
-                impact_speed_reward = impact_cfg["speed_weight"] * clubhead_speed
-                valid_impact_bonus = impact_cfg["contact_bonus"]
-                face_penalty = impact_cfg["face_weight"] * face_error
-                center_penalty = impact_cfg["center_weight"] * center_error
-                attack_penalty = impact_cfg["attack_angle_weight"] * attack_error
-            else:
-                weak_contact_penalty = impact_cfg["weak_contact_penalty"]
+            self.valid_impact = True
+
+        current_clubhead_x_velocity = max(0.0, float(self.clubhead_velocity[0]))
+        current_ball_x_distance = max(0.0, float(self._ball_pos()[0] - self.initial_ball_pos[0]))
+        current_ball_height = max(0.0, float(self._ball_pos()[2] - self.initial_ball_pos[2]))
+
+        previous_max_clubhead_x_velocity = self.max_clubhead_x_velocity
+        previous_max_ball_x_distance = self.max_ball_x_distance
+        previous_max_ball_height = self.max_ball_height
+        self.max_clubhead_x_velocity = max(self.max_clubhead_x_velocity, current_clubhead_x_velocity)
+        self.max_ball_x_distance = max(self.max_ball_x_distance, current_ball_x_distance)
+        self.max_ball_height = max(self.max_ball_height, current_ball_height)
+
+        clubhead_x_velocity_reward = reward_cfg["clubhead_x_velocity_weight"] * (
+            self.max_clubhead_x_velocity - previous_max_clubhead_x_velocity
+        )
+        ball_distance_reward = reward_cfg["ball_distance_weight"] * (
+            self.max_ball_x_distance - previous_max_ball_x_distance
+        )
+        ball_height_reward = reward_cfg["ball_height_weight"] * (
+            self.max_ball_height - previous_max_ball_height
+        )
+
+        plane_terms = self._club_plane_terms(plane_cfg)
+        plane_phase_multiplier = self._plane_phase_multiplier()
+        plane_position_improvement_reward = (
+            plane_phase_multiplier
+            * plane_cfg["position_improvement_weight"]
+            * max(0.0, self.prev_plane_position_error - plane_terms["position_error"])
+        )
+        plane_velocity_improvement_reward = (
+            plane_phase_multiplier
+            * plane_cfg["velocity_improvement_weight"]
+            * max(0.0, self.prev_plane_velocity_error - plane_terms["velocity_error"])
+        )
+        self.prev_plane_position_error = plane_terms["position_error"]
+        self.prev_plane_velocity_error = plane_terms["velocity_error"]
+        plane_position_penalty = plane_phase_multiplier * plane_cfg["position_weight"] * plane_terms["position_loss"]
+        plane_velocity_penalty = plane_phase_multiplier * plane_cfg["velocity_weight"] * plane_terms["velocity_loss"]
+
+        line_terms = self._target_line_terms(flight_cfg)
+        target_line_position_penalty = flight_cfg["target_line_position_weight"] * line_terms["position_loss"]
+        target_line_velocity_penalty = flight_cfg["target_line_velocity_weight"] * line_terms["velocity_loss"]
 
         reward = (
-            progress_reward
-            + speed_reward
-            + backswing_arc_reward
-            + backswing_away_reward
-            + backswing_depth_reward
-            + backswing_height_reward
-            + backswing_completion_bonus
-            + ball_contact_reward
-            + impact_speed_reward
-            + valid_impact_bonus
-            - plane_penalty
-            - action_penalty
-            - smoothness_penalty
-            - joint_comfort_penalty
-            - joint_velocity_penalty
-            - ground_penalty
-            - no_contact_penalty
-            - early_contact_penalty
-            - weak_contact_penalty
-            - face_penalty
-            - path_penalty
-            - center_penalty
-            - attack_penalty
+            clubhead_x_velocity_reward
+            + ball_distance_reward
+            + ball_height_reward
+            + plane_position_improvement_reward
+            + plane_velocity_improvement_reward
+            - plane_position_penalty
+            - plane_velocity_penalty
+            - target_line_position_penalty
+            - target_line_velocity_penalty
         )
         return reward, {
-            "progress_reward": progress_reward,
-            "speed_reward": speed_reward,
-            "backswing_arc_reward": backswing_arc_reward,
-            "backswing_away_reward": backswing_away_reward,
-            "backswing_depth_reward": backswing_depth_reward,
-            "backswing_height_reward": backswing_height_reward,
-            "backswing_completion_bonus": backswing_completion_bonus,
-            "ball_contact_reward": ball_contact_reward,
-            "impact_speed_reward": impact_speed_reward,
-            "valid_impact_bonus": valid_impact_bonus,
-            "ground_penalty": ground_penalty,
-            "no_contact_penalty": no_contact_penalty,
-            "early_contact_penalty": early_contact_penalty,
-            "weak_contact_penalty": weak_contact_penalty,
-            "action_penalty": action_penalty,
-            "smoothness_penalty": smoothness_penalty,
-            "joint_comfort_penalty": joint_comfort_penalty,
-            "joint_velocity_penalty": joint_velocity_penalty,
-            "plane_penalty": plane_penalty,
-            "face_penalty": face_penalty,
-            "path_penalty": path_penalty,
-            "center_penalty": center_penalty,
-            "attack_penalty": attack_penalty,
+            "clubhead_x_velocity_reward": clubhead_x_velocity_reward,
+            "ball_distance_reward": ball_distance_reward,
+            "ball_height_reward": ball_height_reward,
+            "plane_position_improvement_reward": plane_position_improvement_reward,
+            "plane_velocity_improvement_reward": plane_velocity_improvement_reward,
+            "plane_position_penalty": plane_position_penalty,
+            "plane_velocity_penalty": plane_velocity_penalty,
+            "plane_penalty": plane_position_penalty + plane_velocity_penalty,
+            "target_line_position_penalty": target_line_position_penalty,
+            "target_line_velocity_penalty": target_line_velocity_penalty,
+            "target_line_penalty": target_line_position_penalty + target_line_velocity_penalty,
             "clubhead_speed": clubhead_speed,
-            "forward_velocity": forward_velocity,
-            "path_error": path_error,
-            "plane_error": plane_error,
+            "clubhead_x_velocity": current_clubhead_x_velocity,
+            "max_clubhead_x_velocity": self.max_clubhead_x_velocity,
+            "ball_x_distance": current_ball_x_distance,
+            "max_ball_x_distance": self.max_ball_x_distance,
+            "ball_height": current_ball_height,
+            "max_ball_height": self.max_ball_height,
+            "ball_lateral_error": line_terms["position_error"],
+            "ball_lateral_velocity": line_terms["velocity_error"],
+            "plane_phase_multiplier": plane_phase_multiplier,
+            "plane_position_error": plane_terms["position_error"],
+            "plane_velocity_error": plane_terms["velocity_error"],
+            "plane_error": plane_terms["combined_error"],
+            "clubhead_plane_distance": plane_terms["clubhead_position_error"],
+            "shaft_mid_plane_distance": plane_terms["shaft_mid_position_error"],
+            "wrist_plane_distance": plane_terms["wrist_position_error"],
+            "clubhead_plane_velocity": plane_terms["clubhead_velocity_error"],
+            "shaft_mid_plane_velocity": plane_terms["shaft_mid_velocity_error"],
+            "wrist_plane_velocity": plane_terms["wrist_velocity_error"],
             "distance_to_ball": distance_to_ball,
-            "backswing_arc": self.backswing_arc,
-            "max_backswing_away": self.max_backswing_away,
-            "max_backswing_depth": self.max_backswing_depth,
-            "max_backswing_height": self.max_backswing_height,
-            "backswing_completed": self.backswing_completed,
             "valid_impact": self.valid_impact,
-            "early_contact": self.early_contact,
             "ball_contact": ball_contact,
-            "ground_contact": ground_contact,
         }
 
     def _is_terminal(self):
@@ -609,20 +533,120 @@ class GolfSwingEnv(gym.Env):
     def _point_plane_signed_distance(self, point):
         return float(np.dot(point - self.plane_point, self.plane_normal))
 
-    def _swing_plane_error(self):
+    def _club_plane_points(self):
         clubhead = self._clubhead_pos()
         wrist = self._wrist_pos()
         shaft_mid = 0.5 * (clubhead + wrist)
-        distances = [
-            abs(self._point_plane_signed_distance(clubhead)),
-            abs(self._point_plane_signed_distance(wrist)),
-            abs(self._point_plane_signed_distance(shaft_mid)),
-        ]
-        velocities = [
-            abs(float(np.dot(self.clubhead_velocity, self.plane_normal))),
-            abs(float(np.dot(self.wrist_velocity, self.plane_normal))),
-        ]
-        return float(np.mean(distances) + 0.03 * np.mean(velocities))
+        return {
+            "wrist": wrist,
+            "shaft_mid": shaft_mid,
+            "clubhead": clubhead,
+        }
+
+    def _negative_log_plane_loss(self, value, tolerance, barrier_limit, overflow_weight, max_loss=None):
+        normalized = abs(float(value)) / max(float(tolerance), 1e-9)
+        barrier_position = min(normalized / max(float(barrier_limit), 1e-9), 0.999999)
+        barrier_loss = -math.log(1.0 - barrier_position)
+        overflow = max(0.0, normalized - float(barrier_limit))
+        loss = float(barrier_loss + float(overflow_weight) * overflow * overflow)
+        if max_loss is not None:
+            loss = min(loss, float(max_loss))
+        return loss
+
+    def _club_plane_terms(self, plane_cfg=None):
+        plane_cfg = plane_cfg or self.reward_config["plane"]
+        position_tolerance = plane_cfg["position_tolerance"]
+        velocity_tolerance = plane_cfg["velocity_tolerance"]
+        barrier_limit = plane_cfg["barrier_limit"]
+        overflow_weight = plane_cfg["overflow_weight"]
+        max_loss = plane_cfg.get("max_loss")
+
+        position_errors = {}
+        velocity_errors = {}
+        position_losses = []
+        velocity_losses = []
+        for name, point in self._club_plane_points().items():
+            signed_distance = self._point_plane_signed_distance(point)
+            point_normal = self.plane_normal if signed_distance >= 0.0 else -self.plane_normal
+            normal_velocity = abs(float(np.dot(self.clubhead_velocity, point_normal)))
+            position_error = abs(signed_distance)
+            position_errors[name] = position_error
+            velocity_errors[name] = normal_velocity
+            position_losses.append(
+                self._negative_log_plane_loss(
+                    position_error,
+                    position_tolerance,
+                    barrier_limit,
+                    overflow_weight,
+                    max_loss,
+                )
+            )
+            velocity_losses.append(
+                self._negative_log_plane_loss(
+                    normal_velocity,
+                    velocity_tolerance,
+                    barrier_limit,
+                    overflow_weight,
+                    max_loss,
+                )
+            )
+
+        position_error = float(np.mean(list(position_errors.values())))
+        velocity_error = float(np.mean(list(velocity_errors.values())))
+        return {
+            "position_loss": float(np.mean(position_losses)),
+            "velocity_loss": float(np.mean(velocity_losses)),
+            "position_error": position_error,
+            "velocity_error": velocity_error,
+            "combined_error": position_error + velocity_error,
+            "wrist_position_error": position_errors["wrist"],
+            "shaft_mid_position_error": position_errors["shaft_mid"],
+            "clubhead_position_error": position_errors["clubhead"],
+            "wrist_velocity_error": velocity_errors["wrist"],
+            "shaft_mid_velocity_error": velocity_errors["shaft_mid"],
+            "clubhead_velocity_error": velocity_errors["clubhead"],
+        }
+
+    def _target_line_terms(self, flight_cfg=None):
+        flight_cfg = flight_cfg or self.reward_config["flight"]
+        ball_pos = self._ball_pos()
+        if not self.impact_happened and ball_pos[0] <= self.initial_ball_pos[0] + 0.01:
+            return {
+                "position_loss": 0.0,
+                "velocity_loss": 0.0,
+                "position_error": 0.0,
+                "velocity_error": 0.0,
+            }
+
+        position_error = abs(float(ball_pos[1] - self.initial_ball_pos[1]))
+        velocity_error = abs(float(self.ball_velocity[1]))
+        position_loss = self._negative_log_plane_loss(
+            position_error,
+            flight_cfg["target_line_position_tolerance"],
+            flight_cfg["target_line_barrier_limit"],
+            flight_cfg["target_line_overflow_weight"],
+            flight_cfg["target_line_max_loss"],
+        )
+        velocity_loss = self._negative_log_plane_loss(
+            velocity_error,
+            flight_cfg["target_line_velocity_tolerance"],
+            flight_cfg["target_line_barrier_limit"],
+            flight_cfg["target_line_overflow_weight"],
+            flight_cfg["target_line_max_loss"],
+        )
+        return {
+            "position_loss": position_loss,
+            "velocity_loss": velocity_loss,
+            "position_error": position_error,
+            "velocity_error": velocity_error,
+        }
+
+    def _plane_phase_multiplier(self):
+        return 1.0
+
+    def _swing_plane_error(self):
+        terms = self._club_plane_terms()
+        return float(terms["combined_error"])
 
     def _joint_comfort_error(self):
         qpos = self.data.qpos[self.joint_qpos_indices]
@@ -654,14 +678,7 @@ class GolfSwingEnv(gym.Env):
         return self._detect_contact("club_head_geom", "floor") or self._detect_contact("club_shaft_geom", "floor")
 
     def _impact_is_valid(self, clubhead_speed, forward_velocity, path_error, early_contact):
-        impact_cfg = self.reward_config["impact"]
-        return (
-            not early_contact
-            and self.backswing_completed
-            and clubhead_speed >= impact_cfg["min_valid_speed"]
-            and forward_velocity >= impact_cfg["min_forward_velocity"]
-            and path_error <= math.radians(float(impact_cfg["max_valid_path_error_deg"]))
-        )
+        return self._detect_ball_contact()
 
     def _contact_names(self):
         names = []

@@ -1,39 +1,26 @@
-impact:
-  speed_weight: 1.80
-  contact_bonus: 45.0
-  min_valid_speed: 8.0
-  min_forward_velocity: 3.0
-  max_valid_path_error_deg: 50.0
-  weak_contact_penalty: 35.0
-  face_weight: 0.0
-  path_weight: 3.0
-  center_weight: 0.0
-  attack_angle_target_deg: -5.0
-  attack_angle_weight: 0.0
+rewards:
+  clubhead_x_velocity_weight: 1.6
+  ball_distance_weight: 6.0
+  ball_height_weight: 14.0
+plane:
+  position_weight: 18.0
+  velocity_weight: 1.2
+  position_improvement_weight: 3.0
+  velocity_improvement_weight: 0.25
+  position_tolerance: 0.025
+  velocity_tolerance: 0.75
+  barrier_limit: 4.0
+  overflow_weight: 12.0
+  max_loss: 35.0
+  takeaway_multiplier: 3.0
+  backswing_multiplier: 1.8
+  downswing_multiplier: 1.0
+  followthrough_multiplier: 2.6
 flight:
-  distance_weight: 0.3
-  height_weight: 1.0
-  target_line_weight: 0.0
-shaping:
-  progress_weight: 0.02
-  downswing_progress_weight: 1.20
-  speed_weight: 0.0
-  downswing_speed_weight: 0.05
-  plane_weight: 0.08
-  action_weight: 0.001
-  smoothness_weight: 0.002
-  joint_comfort_weight: 0.18
-  joint_velocity_weight: 0.004
-  ground_penalty: 5.0
-  no_contact_penalty: 30.0
-  backswing_arc_weight: 1.60
-  backswing_away_weight: 2.00
-  backswing_depth_weight: 8.00
-  backswing_height_weight: 4.00
-  backswing_completion_bonus: 18.0
-  early_contact_penalty: 50.0
-  min_backswing_arc: 0.80
-  min_backswing_away: 0.36
-  min_backswing_depth: 0.26
-  min_backswing_height: 0.16
-  min_contact_step: 160.0
+  target_line_position_weight: 16.0
+  target_line_velocity_weight: 2.2
+  target_line_position_tolerance: 0.06
+  target_line_velocity_tolerance: 0.8
+  target_line_barrier_limit: 4.0
+  target_line_overflow_weight: 5.0
+  target_line_max_loss: 25.0
