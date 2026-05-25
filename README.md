@@ -40,14 +40,14 @@ At a high level, the project explores three questions:
 
 ## Current Starting Point
 
-To view the current working swing:
+To view the current working backswing:
 
 ```bash
 cd current
-mjpython current_swing.py --club 7iron --hand right
+mjpython two_arm_chest_full_swing.py --club 7iron --hand right --speed 1
 ```
 
-To view the known-best historical swing:
+To view a biomechanically accurate one-arm RL-trained swing:
 
 ```bash
 cd best_model
