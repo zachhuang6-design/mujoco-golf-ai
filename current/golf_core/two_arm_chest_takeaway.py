@@ -236,6 +236,16 @@ def address_club_axes(club_name, hand=DEFAULT_HAND):
 
 
 def club_axes(points, club_name, hand=DEFAULT_HAND):
+    if all(
+        key in points
+        for key in ("club_face_normal", "club_toe_axis", "club_top_axis")
+    ):
+        return (
+            normalize_vec(points["club_face_normal"]),
+            normalize_vec(points["club_toe_axis"]),
+            normalize_vec(points["club_top_axis"]),
+        )
+
     grip = grip_center(points)
     shaft_axis = normalize_vec(sub_vec(points["clubhead"], grip))
     address_shaft_axis, address_face_normal, address_toe_axis, address_top_axis = (
@@ -276,15 +286,23 @@ def club_visual_parts(points, club_name, hand=DEFAULT_HAND, apply_wrist_supinati
     face_center = visual_face_center(points, hand)
     face_normal, toe_axis, top_axis = club_axes(points, club_name, hand)
     head_center = sub_vec(face_center, scale_vec(face_normal, CLUB_HEAD_HALF_THICKNESS))
+    axes_locked = all(
+        key in points
+        for key in ("club_face_normal", "club_toe_axis", "club_top_axis")
+    )
 
-    for _ in range(8):
+    if axes_locked:
         heel = sub_vec(head_center, scale_vec(toe_axis, CLUB_HEAD_HALF_TOE_WIDTH))
         shaft_axis = normalize_vec(sub_vec(heel, grip))
-        toe_axis = sole_axis_for_lie(face_normal, shaft_axis, CLUB_LIE_DEG)
-        top_axis = normalize_vec(cross_vec(face_normal, toe_axis))
+    else:
+        for _ in range(8):
+            heel = sub_vec(head_center, scale_vec(toe_axis, CLUB_HEAD_HALF_TOE_WIDTH))
+            shaft_axis = normalize_vec(sub_vec(heel, grip))
+            toe_axis = sole_axis_for_lie(face_normal, shaft_axis, CLUB_LIE_DEG)
+            top_axis = normalize_vec(cross_vec(face_normal, toe_axis))
 
-    heel = sub_vec(head_center, scale_vec(toe_axis, CLUB_HEAD_HALF_TOE_WIDTH))
-    shaft_axis = normalize_vec(sub_vec(heel, grip))
+        heel = sub_vec(head_center, scale_vec(toe_axis, CLUB_HEAD_HALF_TOE_WIDTH))
+        shaft_axis = normalize_vec(sub_vec(heel, grip))
     if apply_wrist_supination:
         face_normal, toe_axis, top_axis = apply_wrist_supination_roll(
             points,
