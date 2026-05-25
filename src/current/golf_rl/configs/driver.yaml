@@ -1,0 +1,26 @@
+rewards:
+  clubhead_x_velocity_weight: 2.5
+  ball_distance_weight: 16.0
+  ball_height_weight: 5.0
+plane:
+  position_weight: 18.0
+  velocity_weight: 1.2
+  position_improvement_weight: 3.0
+  velocity_improvement_weight: 0.25
+  position_tolerance: 0.025
+  velocity_tolerance: 0.75
+  barrier_limit: 4.0
+  overflow_weight: 12.0
+  max_loss: 35.0
+  takeaway_multiplier: 3.0
+  backswing_multiplier: 1.8
+  downswing_multiplier: 1.0
+  followthrough_multiplier: 2.6
+flight:
+  target_line_position_weight: 18.0
+  target_line_velocity_weight: 2.0
+  target_line_position_tolerance: 0.10
+  target_line_velocity_tolerance: 1.0
+  target_line_barrier_limit: 4.0
+  target_line_overflow_weight: 5.0
+  target_line_max_loss: 25.0
