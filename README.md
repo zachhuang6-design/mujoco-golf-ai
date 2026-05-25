@@ -1,5 +1,13 @@
 # MuJoCo Golf Swing AI
 
+## Project Demos
+
+**Code and model walkthrough**
+
+<img src="assets/readme/code-showcase-preview.gif" width="700">
+
+<img src="golf_swing_simulation.png" width="500">
+
 This project explores reinforcement learning under data scarcity. Detailed golf
 swing datasets are difficult to access, so I use simulation to create training
 environments where AI models can learn, test, and improve swing decisions with
@@ -11,8 +19,6 @@ and search for better outcomes.
 This project is a physics-based golf swing simulator. It uses MuJoCo to model a
 simple golfer arm, wrist, golf club, tee, and ball, then tests how different
 joint motions change the swing and the strike.
-
-<img src="golf_swing_simulation.png" width="500">
 
 The long-term goal is to build toward a more realistic golf swing model. The
 project currently focuses on a two-arm + chest + spine swing that can be replayed, measured, and
