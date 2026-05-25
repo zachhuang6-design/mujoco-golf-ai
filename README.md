@@ -13,8 +13,6 @@
   </tr>
 </table>
 
-<img src="src/golf_swing_simulation.png" width="500">
-
 This project explores reinforcement learning under data scarcity. Detailed golf
 swing datasets are difficult to access, so I use simulation to create training
 environments where AI models can learn, test, and improve swing decisions with
