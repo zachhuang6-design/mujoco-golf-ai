@@ -12,8 +12,10 @@ This project is a physics-based golf swing simulator. It uses MuJoCo to model a
 simple golfer arm, wrist, golf club, tee, and ball, then tests how different
 joint motions change the swing and the strike.
 
+![Golf Swing Simulation](golf_swing_simulation.png)
+
 The long-term goal is to build toward a more realistic golf swing model. The
-project currently focuses on a one-arm swing that can be replayed, measured, and
+project currently focuses on a two-arm + chest + spine swing that can be replayed, measured, and
 improved through optimization or AI training. Over time, this can grow into a
 more complete body model with two arms, torso rotation, hips, legs, and more
 realistic club behavior.
