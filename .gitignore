@@ -5,3 +5,4 @@ __pycache__/
 videos/
 runs/
 logs/
+.env

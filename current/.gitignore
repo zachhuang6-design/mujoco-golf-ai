@@ -1,5 +1,0 @@
-__pycache__/
-*.pyc
-.venv*/
-artifacts/runs/
-artifacts/trained_models/

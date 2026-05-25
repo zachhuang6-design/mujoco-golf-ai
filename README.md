@@ -2,11 +2,18 @@
 
 ## Project Demos
 
-**Code and model walkthrough**
+<table>
+  <tr>
+    <td align="center"><strong>Simulated golf swing</strong></td>
+    <td align="center"><strong>Code and model walkthrough</strong></td>
+  </tr>
+  <tr>
+    <td><img src="src/assets/readme/golf-swing-recording.gif" width="420"></td>
+    <td><img src="src/assets/readme/code-showcase-preview.gif" width="420"></td>
+  </tr>
+</table>
 
-<img src="assets/readme/code-showcase-preview.gif" width="700">
-
-<img src="golf_swing_simulation.png" width="500">
+<img src="src/golf_swing_simulation.png" width="500">
 
 This project explores reinforcement learning under data scarcity. Detailed golf
 swing datasets are difficult to access, so I use simulation to create training
@@ -35,33 +42,33 @@ At a high level, the project explores three questions:
 
 ## Project Structure
 
-- `best_model/`: restored snapshot of the commit that produced the best swing
+- `src/best_model/`: restored snapshot of the commit that produced the best swing
   results so far.
-- `current/`: the active working version of the simulator.
-- `current/golf_core/`: the current biomechanical model and working swing
+- `src/current/`: the active working version of the simulator.
+- `src/current/golf_core/`: the current biomechanical model and working swing
   controller.
-- `current/golf_rl/`: AI training and evaluation tools.
-- `current/legacy/`: older experiments kept for reference.
-- `current/artifacts/`: saved training outputs and model files.
+- `src/current/golf_rl/`: AI training and evaluation tools.
+- `src/current/legacy/`: older experiments kept for reference.
+- `src/current/artifacts/`: saved training outputs and model files.
 
 ## Current Starting Point
 
 To view the current working backswing:
 
 ```bash
-cd current
+cd src/current
 mjpython two_arm_chest_full_swing.py --club 7iron --hand right --speed 1
 ```
 
 To view a biomechanically accurate one-arm RL-trained swing:
 
 ```bash
-cd best_model
+cd src/best_model
 mjpython human_right_arm_biomech_swing.py --club 7iron --hand right
 ```
 
 For the most up-to-date commands and project notes, see:
 
 ```bash
-current/CURRENT.md
+src/current/CURRENT.md
 ```
