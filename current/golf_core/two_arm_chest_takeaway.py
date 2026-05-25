@@ -175,6 +175,13 @@ def takeaway_wrist_supination_roll_angle(club_name, hand=DEFAULT_HAND):
 
 
 def apply_wrist_supination_roll(points, club_name, hand, shaft_axis, face_normal, toe_axis, top_axis):
+    if "club_roll_angle" in points:
+        roll_angle = points["club_roll_angle"]
+        return (
+            rotate_vec(face_normal, shaft_axis, roll_angle),
+            rotate_vec(toe_axis, shaft_axis, roll_angle),
+            rotate_vec(top_axis, shaft_axis, roll_angle),
+        )
     if not MATCH_SOLE_TILT_WITH_WRIST_SUPINATION:
         return face_normal, toe_axis, top_axis
     roll_angle = smoothstep(points.get("progress", 0.0)) * takeaway_wrist_supination_roll_angle(
