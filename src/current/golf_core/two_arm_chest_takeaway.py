@@ -687,7 +687,10 @@ def set_mocap_segment(model, data, body_name, start, end):
 
 
 def apply_pose(model, data, points, club_name=DEFAULT_CLUB, hand=DEFAULT_HAND):
-    chest_axis_bottom, chest_axis_top = chest_axis_points(points["chest_center"])
+    chest_axis_bottom = points.get("chest_axis_bottom")
+    chest_axis_top = points.get("chest_axis_top")
+    if chest_axis_bottom is None or chest_axis_top is None:
+        chest_axis_bottom, chest_axis_top = chest_axis_points(points["chest_center"])
     shaft_top = grip_center(points)
 
     set_mocap_segment(model, data, "chest_shoulder_bar_body", points["right_shoulder"], points["left_shoulder"])

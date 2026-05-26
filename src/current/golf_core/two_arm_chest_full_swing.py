@@ -129,6 +129,23 @@ def rotate_point(point, origin, axis, angle):
     return add_vec(origin, rotate_vec(sub_vec(point, origin), axis, angle))
 
 
+def custom_chest_axis(chest_center, spine_lean_deg=0.0, hip_bump_x=0.0):
+    axis_bottom, axis_top = chest_axis_points(chest_center)
+    base_axis = sub_vec(axis_top, axis_bottom)
+    leaned_axis = rotate_vec(base_axis, (0.0, 1.0, 0.0), -deg(spine_lean_deg))
+    half_axis = scale_vec(leaned_axis, 0.5)
+    return (
+        add_vec(sub_vec(chest_center, half_axis), (hip_bump_x, 0.0, 0.0)),
+        add_vec(add_vec(chest_center, half_axis), (-0.45 * hip_bump_x, 0.0, 0.0)),
+    )
+
+
+def pose_chest_axis(points):
+    if "chest_axis_bottom" in points and "chest_axis_top" in points:
+        return points["chest_axis_bottom"], points["chest_axis_top"]
+    return chest_axis_points(points["chest_center"])
+
+
 def grip_center(points):
     return takeaway.grip_center(points)
 
@@ -284,20 +301,59 @@ def freeze_club_frame(points, club_name, hand):
     return points
 
 
-def body_from_address(base, hand, chest_turn_deg, shift=(0.0, 0.0, 0.0)):
+def square_clubface_to_target(points, club_name, hand):
+    parts = takeaway.club_visual_parts(points, club_name, hand)
+    shaft_axis = normalize_vec(sub_vec(parts["heel"], parts["grip"]))
+    target_face = takeaway.face_normal_for_loft(club_name)
+
+    best_angle = 0.0
+    best_score = float("inf")
+    for index in range(721):
+        angle = -math.pi + (2.0 * math.pi * index / 720.0)
+        face = rotate_vec(points["club_face_normal"], shaft_axis, angle)
+        horizontal_angle = math.atan2(face[1], face[0])
+        loft_error = face[2] - target_face[2]
+        wrong_way_penalty = max(0.0, -face[0]) * 10.0
+        score = 4.0 * abs(horizontal_angle) + abs(loft_error) + wrong_way_penalty
+        if score < best_score:
+            best_score = score
+            best_angle = angle
+
+    points["club_face_normal"] = rotate_vec(points["club_face_normal"], shaft_axis, best_angle)
+    points["club_toe_axis"] = rotate_vec(points["club_toe_axis"], shaft_axis, best_angle)
+    points["club_top_axis"] = rotate_vec(points["club_top_axis"], shaft_axis, best_angle)
+    points["club_roll_angle"] = 0.0
+    return points
+
+
+def body_from_address(
+    base,
+    hand,
+    chest_turn_deg,
+    shift=(0.0, 0.0, 0.0),
+    spine_lean_deg=0.0,
+    hip_bump_x=0.0,
+):
     chest_axis_bottom, chest_axis_top = chest_axis_points(base["chest_center"])
     chest_axis = normalize_vec(sub_vec(chest_axis_top, chest_axis_bottom))
     turn = deg(chest_turn_deg if hand == "right" else -chest_turn_deg)
     moved = {"chest_center": add_vec(base["chest_center"], shift)}
+    shoulder_counter = (-0.35 * hip_bump_x - 0.0025 * spine_lean_deg, 0.0, 0.0)
 
     for key in ("left_shoulder", "right_shoulder"):
         moved[key] = add_vec(
-            rotate_point(base[key], base["chest_center"], chest_axis, turn),
+            add_vec(rotate_point(base[key], base["chest_center"], chest_axis, turn), shoulder_counter),
             shift,
         )
 
     moved["left_elbow_turn_dir"] = rotate_vec(base["left_elbow_turn_dir"], chest_axis, turn)
     moved["right_elbow_turn_dir"] = rotate_vec(base["right_elbow_turn_dir"], chest_axis, turn)
+    if spine_lean_deg or hip_bump_x:
+        moved["chest_axis_bottom"], moved["chest_axis_top"] = custom_chest_axis(
+            moved["chest_center"],
+            spine_lean_deg,
+            hip_bump_x,
+        )
     return moved
 
 
@@ -307,6 +363,27 @@ def apply_grip_and_club(base, moved, grip, clubhead):
     moved["left_wrist"] = add_vec(grip, scale_vec(shaft_axis, offsets["left"]))
     moved["right_wrist"] = add_vec(grip, scale_vec(shaft_axis, offsets["right"]))
     moved["clubhead"] = clubhead
+    return moved
+
+
+def legalize_lead_arm_and_club(base, moved, shaft_axis):
+    shaft_axis = normalize_vec(shaft_axis)
+    offsets = hand_offsets_on_shaft(base)
+    left_upper, left_forearm = arm_lengths(base, "left")
+    left_reach = left_upper + left_forearm - 1e-6
+    shoulder_to_wrist = sub_vec(moved["left_wrist"], moved["left_shoulder"])
+    if length_vec(shoulder_to_wrist) < 1e-6:
+        shoulder_to_wrist = sub_vec(base["left_wrist"], base["left_shoulder"])
+
+    legal_left_wrist = add_vec(
+        moved["left_shoulder"],
+        scale_vec(normalize_vec(shoulder_to_wrist), left_reach),
+    )
+    legal_grip = sub_vec(legal_left_wrist, scale_vec(shaft_axis, offsets["left"]))
+
+    moved["left_wrist"] = add_vec(legal_grip, scale_vec(shaft_axis, offsets["left"]))
+    moved["right_wrist"] = add_vec(legal_grip, scale_vec(shaft_axis, offsets["right"]))
+    moved["clubhead"] = add_vec(legal_grip, scale_vec(shaft_axis, shaft_length(base)))
     return moved
 
 
@@ -340,59 +417,104 @@ def clubhead_from_grip_axis(base, grip, axis):
     return add_vec(grip, scale_vec(normalize_vec(axis), shaft_length(base)))
 
 
-def sequenced_keyframe(base, hand, club_name, chest_turn_deg, grip, shaft_axis, shift=(0.0, 0.0, 0.0)):
-    moved = body_from_address(base, hand, chest_turn_deg, shift)
+def sequenced_keyframe(
+    base,
+    hand,
+    club_name,
+    chest_turn_deg,
+    grip,
+    shaft_axis,
+    shift=(0.0, 0.0, 0.0),
+    spine_lean_deg=0.0,
+    hip_bump_x=0.0,
+    right_supination_deg=20.0,
+):
+    moved = body_from_address(base, hand, chest_turn_deg, shift, spine_lean_deg, hip_bump_x)
     clubhead = clubhead_from_grip_axis(base, grip, shaft_axis)
     apply_grip_and_club(base, moved, grip, clubhead)
+    legalize_lead_arm_and_club(base, moved, shaft_axis)
     solve_elbows(base, moved, left_straight=True)
     moved["right_forearm_supination_dir"] = takeaway.forearm_marker_direction(
         moved["right_elbow"],
         moved["right_wrist"],
         moved["right_elbow_turn_dir"],
-        -deg(20.0) if hand == "right" else deg(20.0),
+        -deg(right_supination_deg) if hand == "right" else deg(right_supination_deg),
     )
     moved["progress"] = 0.0
+    return freeze_club_frame(moved, club_name, hand)
+
+
+def mirrored_backswing_keyframe(
+    base,
+    hand,
+    club_name,
+    backswing_progress,
+    spine_lean_deg=0.0,
+    hip_bump_x=0.0,
+):
+    moved = dict(backswing.pose_points(hand, backswing_progress, club_name))
+    if spine_lean_deg or hip_bump_x:
+        moved["chest_axis_bottom"], moved["chest_axis_top"] = custom_chest_axis(
+            moved["chest_center"],
+            spine_lean_deg,
+            hip_bump_x,
+        )
+    shaft_axis = normalize_vec(sub_vec(moved["clubhead"], grip_center(moved)))
+    legalize_lead_arm_and_club(base, moved, shaft_axis)
+    solve_elbows(base, moved, left_straight=True)
     return freeze_club_frame(moved, club_name, hand)
 
 
 def impact_keyframe(base, hand, club_name):
-    moved = body_from_address(base, hand, 28.0, shift=(0.035, 0.0, 0.0))
+    moved = body_from_address(
+        base,
+        hand,
+        34.0,
+        shift=(0.065, 0.0, 0.0),
+        spine_lean_deg=11.0,
+        hip_bump_x=0.06,
+    )
     clubhead = base["clubhead"]
-    rough_grip = (clubhead[0] + 0.13, 0.32, 1.06)
+    rough_grip = (clubhead[0] + 0.20, 0.28, 1.04)
     shaft_axis = normalize_vec(sub_vec(clubhead, rough_grip))
     grip = sub_vec(clubhead, scale_vec(shaft_axis, shaft_length(base)))
     apply_grip_and_club(base, moved, grip, clubhead)
+    legalize_lead_arm_and_club(base, moved, shaft_axis)
     solve_elbows(base, moved, left_straight=True)
     moved["right_forearm_supination_dir"] = takeaway.forearm_marker_direction(
         moved["right_elbow"],
         moved["right_wrist"],
         moved["right_elbow_turn_dir"],
-        -deg(8.0) if hand == "right" else deg(8.0),
+        -deg(5.0) if hand == "right" else deg(5.0),
     )
     moved["progress"] = 0.0
-    return freeze_club_frame(moved, club_name, hand)
+    freeze_club_frame(moved, club_name, hand)
+    return square_clubface_to_target(moved, club_name, hand)
 
 
 def make_keyframes(hand=DEFAULT_HAND, club_name=DEFAULT_CLUB):
     base = setup_points(hand)
     top = dict(backswing.pose_points(hand, 1.0, club_name))
+    top_shaft_axis = normalize_vec(sub_vec(top["clubhead"], grip_center(top)))
+    legalize_lead_arm_and_club(base, top, top_shaft_axis)
+    solve_elbows(base, top, left_straight=True)
     top = freeze_club_frame(top, club_name, hand)
 
-    transition = sequenced_keyframe(
+    transition = mirrored_backswing_keyframe(
         base,
         hand,
         club_name,
-        chest_turn_deg=-55.0,
-        grip=(-0.50, 0.88, 1.58),
-        shaft_axis=(0.60, 0.30, 0.74),
+        backswing_progress=0.78,
+        spine_lean_deg=5.0,
+        hip_bump_x=0.035,
     )
-    delivery = sequenced_keyframe(
+    delivery = mirrored_backswing_keyframe(
         base,
         hand,
         club_name,
-        chest_turn_deg=-8.0,
-        grip=(0.03, 0.42, 1.18),
-        shaft_axis=(-0.45, -0.12, -0.88),
+        backswing_progress=backswing.TAKEAWAY_PHASE,
+        spine_lean_deg=8.0,
+        hip_bump_x=0.045,
     )
     impact = impact_keyframe(base, hand, club_name)
     extension = sequenced_keyframe(
@@ -428,6 +550,37 @@ def transport_club_frame(start, moved, club_name, hand):
     moved["club_roll_angle"] = 0.0
 
 
+def orthonormalize_club_axes(face_normal, toe_axis):
+    face_normal = normalize_vec(face_normal)
+    toe_axis = sub_vec(toe_axis, scale_vec(face_normal, dot_vec(toe_axis, face_normal)))
+    if length_vec(toe_axis) < 1e-6:
+        toe_axis = cross_vec(face_normal, (0.0, 0.0, 1.0))
+    if length_vec(toe_axis) < 1e-6:
+        toe_axis = cross_vec(face_normal, (0.0, 1.0, 0.0))
+    toe_axis = normalize_vec(toe_axis)
+    top_axis = normalize_vec(cross_vec(face_normal, toe_axis))
+    return face_normal, toe_axis, top_axis
+
+
+def blend_club_frame(start, target, moved, t, club_name, hand):
+    start_parts = takeaway.club_visual_parts(start, club_name, hand)
+    target_parts = takeaway.club_visual_parts(target, club_name, hand)
+    face = backswing.rotate_direction_toward(
+        start_parts["face_normal"],
+        target_parts["face_normal"],
+        t,
+    )
+    toe = backswing.rotate_direction_toward(
+        start_parts["toe_axis"],
+        target_parts["toe_axis"],
+        t,
+    )
+    moved["club_face_normal"], moved["club_toe_axis"], moved["club_top_axis"] = (
+        orthonormalize_club_axes(face, toe)
+    )
+    moved["club_roll_angle"] = 0.0
+
+
 def blend_pose(start, target, t, base, club_name, hand):
     t = smootherstep(t)
     moved = {
@@ -435,6 +588,10 @@ def blend_pose(start, target, t, base, club_name, hand):
         "left_shoulder": lerp_vec(start["left_shoulder"], target["left_shoulder"], t),
         "right_shoulder": lerp_vec(start["right_shoulder"], target["right_shoulder"], t),
     }
+    start_axis_bottom, start_axis_top = pose_chest_axis(start)
+    target_axis_bottom, target_axis_top = pose_chest_axis(target)
+    moved["chest_axis_bottom"] = lerp_vec(start_axis_bottom, target_axis_bottom, t)
+    moved["chest_axis_top"] = lerp_vec(start_axis_top, target_axis_top, t)
 
     for side in ("left", "right"):
         shoulder_key = f"{side}_shoulder"
@@ -457,6 +614,7 @@ def blend_pose(start, target, t, base, club_name, hand):
     takeaway.lock_wrists_to_shaft(base, moved)
     moved_grip = grip_center(moved)
     moved["clubhead"] = add_vec(moved_grip, scale_vec(shaft_axis, shaft_length(base)))
+    legalize_lead_arm_and_club(base, moved, shaft_axis)
 
     left_upper, _ = arm_lengths(base, "left")
     left_axis = normalize_vec(sub_vec(moved["left_wrist"], moved["left_shoulder"]))
@@ -480,7 +638,7 @@ def blend_pose(start, target, t, base, club_name, hand):
         -deg(12.0) if hand == "right" else deg(12.0),
     )
     moved["progress"] = 0.0
-    transport_club_frame(start, moved, club_name, hand)
+    blend_club_frame(start, target, moved, t, club_name, hand)
     return moved
 
 
@@ -492,12 +650,25 @@ def takeaway_progress():
     return BACKSWING_END * backswing.TAKEAWAY_PHASE
 
 
+def legalize_full_swing_pose(points, base, club_name, hand):
+    points = dict(points)
+    shaft_axis = normalize_vec(sub_vec(points["clubhead"], grip_center(points)))
+    legalize_lead_arm_and_club(base, points, shaft_axis)
+    solve_elbows(base, points, left_straight=True)
+    return freeze_club_frame(points, club_name, hand)
+
+
 def pose_points(hand=DEFAULT_HAND, progress=0.0, club_name=DEFAULT_CLUB):
     progress = max(0.0, min(1.0, progress))
-    if progress <= BACKSWING_END:
-        return backswing.pose_points(hand, progress / BACKSWING_END, club_name)
-
     base = setup_points(hand)
+    if progress <= BACKSWING_END:
+        return legalize_full_swing_pose(
+            backswing.pose_points(hand, progress / BACKSWING_END, club_name),
+            base,
+            club_name,
+            hand,
+        )
+
     top, transition, delivery, impact, extension, finish = make_keyframes(hand, club_name)
 
     if progress <= TRANSITION_END:
