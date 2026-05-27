@@ -25,16 +25,34 @@ def make_reward_logger(BaseCallback):
             if infos:
                 for key, value in infos[0].items():
                     if key.endswith("_reward") or key.endswith("_penalty") or key in (
+                        "clubhead_speed",
+                        "max_clubhead_speed",
                         "clubhead_x_velocity",
                         "max_clubhead_x_velocity",
                         "ball_x_distance",
                         "max_ball_x_distance",
+                        "ball_x_velocity",
+                        "max_ball_x_velocity",
                         "ball_height",
                         "max_ball_height",
                         "ball_lateral_error",
+                        "max_ball_lateral_abs",
                         "ball_lateral_velocity",
+                        "club_ball_distance",
+                        "min_club_ball_distance",
                         "tracking_error",
+                        "near_ball",
+                        "target_line_factor",
+                        "lateral_ratio",
                         "ball_contact",
+                        "first_contact",
+                        "impact_happened",
+                        "first_contact_step",
+                        "impact_clubhead_speed",
+                        "impact_clubhead_x_velocity",
+                        "impact_ball_x_velocity",
+                        "impact_ball_lateral_velocity",
+                        "impact_ball_lateral_error",
                     ):
                         try:
                             self.logger.record(f"joint_reward_terms/{key}", float(value))
@@ -53,6 +71,7 @@ def make_env(args):
         tracking_weight=args.tracking_weight,
         action_weight=args.action_weight,
         smoothness_weight=args.smoothness_weight,
+        contact_reward=args.contact_reward,
     )
 
 
@@ -66,10 +85,11 @@ def main():
     parser.add_argument("--timesteps", type=int, default=250_000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="auto")
-    parser.add_argument("--residual-scale", type=float, default=0.18)
-    parser.add_argument("--tracking-weight", type=float, default=0.025)
+    parser.add_argument("--residual-scale", type=float, default=0.08)
+    parser.add_argument("--tracking-weight", type=float, default=0.06)
     parser.add_argument("--action-weight", type=float, default=0.002)
-    parser.add_argument("--smoothness-weight", type=float, default=0.004)
+    parser.add_argument("--smoothness-weight", type=float, default=0.006)
+    parser.add_argument("--contact-reward", type=float, default=120.0)
     parser.add_argument("--log-dir", default="artifacts/runs/sac_two_arm_joint")
     parser.add_argument("--model-dir", default="artifacts/trained_models_two_arm_joint")
     parser.add_argument("--check-env", action="store_true")

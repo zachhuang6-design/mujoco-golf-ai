@@ -1,0 +1,140 @@
+<mujoco model="two_arm_joint_golf">
+  <compiler angle="radian"/>
+
+  <option integrator="RK4"/>
+
+  <default>
+    <joint armature="0.01" damping="1"/>
+    <geom friction="0.9 0.02 0.001"/>
+  </default>
+
+  <worldbody>
+    <geom name="floor" size="8 8 0.1" type="plane" rgba="0.76 0.86 0.72 1"/>
+    <geom name="fixed_spine_axis" size="0.026 0.4" pos="0.105 0.563244 1.54055" quat="0.300706 -0.953717 0 0" type="capsule" contype="0" conaffinity="0" rgba="0.18 0.18 0.18 0.55"/>
+    <geom name="fixed_pelvis_bar" size="0.045 0.22" pos="0.105 0.792674 1.18289" quat="0.707107 0 -0.707107 0" type="capsule" contype="0" conaffinity="0" rgba="0.42 0.32 0.24 0.55"/>
+    <geom name="chest_hinge_marker" size="0.032" pos="0.105 0.46 1.688" contype="0" conaffinity="0" rgba="0.05 0.05 0.05 0.65"/>
+    <light pos="0 1 3" dir="0 -0.287348 -0.957826" diffuse="1 1 1"/>
+    <body name="tee" pos="0.1053 -0.0079 0.388964">
+      <geom name="tee_geom" size="0.01 0.08" type="cylinder" rgba="1 0.5 0 1"/>
+    </body>
+    <body name="ball" pos="0.1053 -0.0079 0.4903">
+      <joint name="ball_free" type="free"/>
+      <geom name="golf_ball" size="0.021336" condim="4" friction="0.45 0.01" solref="0.004" solimp="0.99 0.995" mass="0.046" rgba="1 1 1 1"/>
+    </body>
+    <body name="target_left_wrist_body" pos="0 0 -1" mocap="true">
+      <geom name="target_left_wrist_geom" size="0.018" contype="0" conaffinity="0" rgba="1 0.3 0.1 0.45"/>
+    </body>
+    <body name="target_right_wrist_body" pos="0 0 -1" mocap="true">
+      <geom name="target_right_wrist_geom" size="0.018" contype="0" conaffinity="0" rgba="0.1 0.5 1 0.45"/>
+    </body>
+    <body name="target_clubhead_body" pos="0 0 -1" mocap="true">
+      <geom name="target_clubhead_geom" size="0.018" contype="0" conaffinity="0" rgba="1 1 0 0.55"/>
+    </body>
+    <body name="target_left_elbow_body" pos="0 0 -1" mocap="true">
+      <geom name="target_left_elbow_geom" size="0.018" contype="0" conaffinity="0" rgba="1 0.6 0.1 0.35"/>
+    </body>
+    <body name="target_right_elbow_body" pos="0 0 -1" mocap="true">
+      <geom name="target_right_elbow_geom" size="0.018" contype="0" conaffinity="0" rgba="0.1 1 0.4 0.35"/>
+    </body>
+    <body name="chest" pos="0.105 0.46 1.688">
+      <joint name="chest_turn" pos="0 0 0" axis="0 -0.573576 0.819152" limited="true" range="-2.18166 2.18166" armature="0.08" damping="4"/>
+      <joint name="chest_forward_bend" pos="0 0 0" axis="0 1 0" limited="true" range="-0.436332 0.314159" armature="0.1" damping="5"/>
+      <geom name="chest_bar" size="0.055 0.256008" quat="0.661439 0 -0.749999 0" type="capsule" mass="16" rgba="0.75 0.55 0.38 1"/>
+      <site name="right_shoulder_site" pos="-0.254 0 -0.032" size="0.018" rgba="0.1 0.1 1 1"/>
+      <site name="left_shoulder_site" pos="0.254 0 0.032" size="0.018" rgba="1 0.2 0.1 1"/>
+      <body name="right_shoulder_turn_body" pos="-0.254 0 -0.032">
+        <inertial pos="0 0 0" mass="0.001" diaginertia="1e-06 1e-06 1e-06"/>
+        <joint name="right_shoulder_turn" pos="0 0 0" axis="0 0 1" limited="true" range="-2.79253 2.79253" armature="0.05" damping="2.5"/>
+        <body name="right_shoulder_lift_body">
+          <inertial pos="0 0 0" mass="0.001" diaginertia="1e-06 1e-06 1e-06"/>
+          <joint name="right_shoulder_lift" pos="0 0 0" axis="1 0 0" limited="true" range="-2.79253 2.79253" armature="0.05" damping="2.5"/>
+          <body name="right_upper_arm">
+            <joint name="right_shoulder_roll" pos="0 0 0" axis="0 0 1" limited="true" range="-2.44346 2.44346" armature="0.03" damping="1.5"/>
+            <geom name="right_upper_arm_geom" size="0.034 0.1722" pos="0 0 -0.1722" type="capsule" mass="1.9" rgba="0.25 0.38 1 1"/>
+            <body name="right_elbow_flex_body" pos="0 0 -0.3444">
+              <inertial pos="0 0 0" mass="0.001" diaginertia="1e-06 1e-06 1e-06"/>
+              <joint name="right_elbow_flex" pos="0 0 0" axis="-1 0 0" limited="true" range="0 2.35619" armature="0.035" damping="1.8"/>
+              <site name="right_elbow_site" pos="0 0 0" size="0.012" rgba="1 0.5 0 1"/>
+              <body name="right_forearm">
+                <joint name="right_forearm_rotation" pos="0 0 0" axis="0 0 -1" limited="true" range="-2.0944 2.0944" armature="0.024" damping="1.2"/>
+                <geom name="right_forearm_geom" size="0.03 0.1366" pos="0 0 -0.1366" type="capsule" mass="1.25" rgba="0.2 0.85 0.35 1"/>
+                <body name="right_wrist_flex_body" pos="0 0 -0.2732">
+                  <inertial pos="0 0 0" mass="0.001" diaginertia="1e-06 1e-06 1e-06"/>
+                  <joint name="right_wrist_flex" pos="0 0 0" axis="-1 0 0" limited="true" range="-1.5708 1.5708" armature="0.02"/>
+                  <body name="right_hand">
+                    <joint name="right_wrist_deviation" pos="0 0 0" axis="0 1 0" limited="true" range="-1.22173 0.872665" armature="0.02"/>
+                    <geom name="right_hand_geom" size="0.038" mass="0.45" rgba="0.9 0.78 0.62 1"/>
+                    <site name="right_grip_site" pos="0 0 0" size="0.012" rgba="0 0.8 1 1"/>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="left_shoulder_turn_body" pos="0.254 0 0.032">
+        <inertial pos="0 0 0" mass="0.001" diaginertia="1e-06 1e-06 1e-06"/>
+        <joint name="left_shoulder_turn" pos="0 0 0" axis="0 0 1" limited="true" range="-2.79253 2.79253" armature="0.05" damping="2.5"/>
+        <body name="left_shoulder_lift_body">
+          <inertial pos="0 0 0" mass="0.001" diaginertia="1e-06 1e-06 1e-06"/>
+          <joint name="left_shoulder_lift" pos="0 0 0" axis="1 0 0" limited="true" range="-2.79253 2.79253" armature="0.05" damping="2.5"/>
+          <body name="left_upper_arm">
+            <joint name="left_shoulder_roll" pos="0 0 0" axis="0 0 1" limited="true" range="-2.44346 2.44346" armature="0.03" damping="1.5"/>
+            <geom name="left_upper_arm_geom" size="0.034 0.1722" pos="0 0 -0.1722" type="capsule" mass="1.9" rgba="0.95 0.45 0.2 1"/>
+            <body name="left_elbow_flex_body" pos="0 0 -0.3444">
+              <inertial pos="0 0 0" mass="0.001" diaginertia="1e-06 1e-06 1e-06"/>
+              <joint name="left_elbow_flex" pos="0 0 0" axis="-1 0 0" limited="true" range="0 2.35619" armature="0.035" damping="1.8"/>
+              <site name="left_elbow_site" pos="0 0 0" size="0.012" rgba="1 0.5 0 1"/>
+              <body name="left_forearm">
+                <joint name="left_forearm_rotation" pos="0 0 0" axis="0 0 -1" limited="true" range="-2.0944 2.0944" armature="0.024" damping="1.2"/>
+                <geom name="left_forearm_geom" size="0.03 0.1366" pos="0 0 -0.1366" type="capsule" mass="1.25" rgba="0.95 0.75 0.2 1"/>
+                <body name="left_wrist_flex_body" pos="0 0 -0.2732">
+                  <inertial pos="0 0 0" mass="0.001" diaginertia="1e-06 1e-06 1e-06"/>
+                  <joint name="left_wrist_flex" pos="0 0 0" axis="1 0 0" limited="true" range="-1.5708 1.5708" armature="0.02"/>
+                  <body name="left_hand">
+                    <joint name="left_wrist_deviation" pos="0 0 0" axis="0 1 0" limited="true" range="-1.22173 0.872665" armature="0.02"/>
+                    <geom name="left_hand_geom" size="0.038" mass="0.45" rgba="0.9 0.78 0.62 1"/>
+                    <site name="left_grip_site" pos="0 0 0" size="0.012" rgba="0 0.8 1 1"/>
+                    <body name="club">
+                      <geom name="club_shaft_geom" size="0.01 0.386395" pos="0 -0.174 -0.345" quat="0.972849 -0.231442 0 0" type="capsule" mass="0.1" rgba="0.05 0.05 0.05 1"/>
+                      <geom name="club_head_geom" size="0.018 0.05 0.032" pos="-0.015588 -0.398 -0.699" quat="0.965926 0 -0.258819 0" type="box" condim="4" friction="0.8" solref="0.004" solimp="0.99 0.995" mass="0.27" rgba="0.16 0.16 0.16 1"/>
+                      <site name="club_grip_site" pos="0 0 0" size="0.012" rgba="0 0.7 1 1"/>
+                      <site name="club_trail_grip_site" pos="0 -0.034314 -0.068037" size="0.011" rgba="0.8 0.2 1 1"/>
+                      <site name="club_mid_site" pos="0 -0.174 -0.345" size="0.009" rgba="1 0.8 0 1"/>
+                      <site name="club_heel_site" pos="0 -0.348 -0.69" size="0.01" rgba="0.1 1 0.1 1"/>
+                      <site name="clubhead_site" pos="0 -0.398 -0.69" size="0.012" rgba="1 0.1 0.1 1"/>
+                      <site name="club_face_normal_site" pos="0.103923 -0.398 -0.63" size="0.01" rgba="0 1 1 1"/>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <equality>
+    <weld name="right_hand_rigid_grip" site1="right_grip_site" site2="club_trail_grip_site" torquescale="1" solref="0.006" solimp="0.99 0.995"/>
+  </equality>
+
+  <actuator>
+    <general name="chest_turn_motor" joint="chest_turn" ctrllimited="true" ctrlrange="-120 120"/>
+    <general name="chest_forward_bend_motor" joint="chest_forward_bend" ctrllimited="true" ctrlrange="-85 85"/>
+    <general name="left_shoulder_turn_motor" joint="left_shoulder_turn" ctrllimited="true" ctrlrange="-75 75"/>
+    <general name="left_shoulder_lift_motor" joint="left_shoulder_lift" ctrllimited="true" ctrlrange="-75 75"/>
+    <general name="left_shoulder_roll_motor" joint="left_shoulder_roll" ctrllimited="true" ctrlrange="-45 45"/>
+    <general name="left_elbow_flex_motor" joint="left_elbow_flex" ctrllimited="true" ctrlrange="-60 60"/>
+    <general name="left_forearm_rotation_motor" joint="left_forearm_rotation" ctrllimited="true" ctrlrange="-28 28"/>
+    <general name="left_wrist_flex_motor" joint="left_wrist_flex" ctrllimited="true" ctrlrange="-22 22"/>
+    <general name="left_wrist_deviation_motor" joint="left_wrist_deviation" ctrllimited="true" ctrlrange="-18 18"/>
+    <general name="right_shoulder_turn_motor" joint="right_shoulder_turn" ctrllimited="true" ctrlrange="-75 75"/>
+    <general name="right_shoulder_lift_motor" joint="right_shoulder_lift" ctrllimited="true" ctrlrange="-75 75"/>
+    <general name="right_shoulder_roll_motor" joint="right_shoulder_roll" ctrllimited="true" ctrlrange="-45 45"/>
+    <general name="right_elbow_flex_motor" joint="right_elbow_flex" ctrllimited="true" ctrlrange="-60 60"/>
+    <general name="right_forearm_rotation_motor" joint="right_forearm_rotation" ctrllimited="true" ctrlrange="-28 28"/>
+    <general name="right_wrist_flex_motor" joint="right_wrist_flex" ctrllimited="true" ctrlrange="-22 22"/>
+    <general name="right_wrist_deviation_motor" joint="right_wrist_deviation" ctrllimited="true" ctrlrange="-18 18"/>
+  </actuator>
+</mujoco>

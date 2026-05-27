@@ -12,7 +12,7 @@ ball_mass = 0.046
 
 # Stiffer contacts make the strike behave less like a soft bump. The solref
 # time constant is kept at 2x the timestep so MuJoCo can solve it stably.
-CONTACT_SOLREF = "0.004 1"
+CONTACT_SOLREF = "0.0025 1"
 CONTACT_SOLIMP = "0.99 0.995 0.001"
 CLUB_CONTACT_ATTRS = (
     f'solref="{CONTACT_SOLREF}" solimp="{CONTACT_SOLIMP}" '
