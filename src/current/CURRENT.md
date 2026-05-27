@@ -19,10 +19,35 @@ This folder has been reorganized around the current working path:
    - Training runs and saved models.
    - Generated outputs live here instead of cluttering the source root.
 
-## Current Viewer
+## Completed Kinematics Swing
+
+This is the hand-built two-arm + chest swing animation. It is the clean visual
+reference for the motion sequence.
 
 ```bash
-mjpython current_swing.py --club 7iron --hand right
+cd /Users/zachhuang/mujoco-test/src/current
+/Users/zachhuang/mujoco-test/.venv/bin/mjpython two_arm_chest_full_swing.py --club 7iron --hand right --speed 1
+```
+
+## Current Best Physics-Based Swing
+
+This replays the saved best SAC policy on the joint-accurate two-arm physics
+model.
+
+```bash
+cd /Users/zachhuang/mujoco-test/src/current
+/Users/zachhuang/mujoco-test/.venv/bin/mjpython -m golf_rl.visualize_two_arm_joint_policy \
+  artifacts/trained_models_two_arm_joint/best_model \
+  --club 7iron \
+  --hand right \
+  --speed 6
+```
+
+If the saved policy is missing, view the physics baseline directly:
+
+```bash
+cd /Users/zachhuang/mujoco-test/src/current
+/Users/zachhuang/mujoco-test/.venv/bin/mjpython two_arm_joint_baseline.py --club 7iron --hand right --speed 6
 ```
 
 ## Known-Best Historical Version
@@ -31,16 +56,32 @@ The best-performing older commit has been restored outside this folder:
 
 ```bash
 cd ../best_model
-mjpython human_right_arm_biomech_swing.py --club 7iron --hand right
+/Users/zachhuang/mujoco-test/.venv/bin/mjpython human_right_arm_biomech_swing.py --club 7iron --hand right
 ```
 
 Use `../best_model` as the known-good reference if the newer experiments get
 too noisy.
 
-## Current Residual RL Training
+## Current Two-Arm Physics RL Training
+
+Restart training from the current physics-based two-arm environment:
 
 ```bash
-../.venv/bin/python -m golf_rl.train_sac \
+cd /Users/zachhuang/mujoco-test/src/current
+PYTHONDONTWRITEBYTECODE=1 /Users/zachhuang/mujoco-test/.venv/bin/python -m golf_rl.train_two_arm_joint_sac \
+  --club 7iron \
+  --hand right \
+  --timesteps 100000 \
+  --device cpu
+```
+
+## Older Residual RL Training
+
+This was the earlier one-arm residual RL path and is kept for reference:
+
+```bash
+cd /Users/zachhuang/mujoco-test/src/current
+/Users/zachhuang/mujoco-test/.venv/bin/python -m golf_rl.train_sac \
   --env residual \
   --club 7iron \
   --hand right \
@@ -61,7 +102,8 @@ bash dgx/setup_dgx_venv.sh
 ## Evaluate
 
 ```bash
-../.venv/bin/python -m golf_rl.evaluate_policy \
+cd /Users/zachhuang/mujoco-test/src/current
+/Users/zachhuang/mujoco-test/.venv/bin/python -m golf_rl.evaluate_policy \
   artifacts/trained_models/residual_stage1_local/best_model \
   --env residual \
   --algo sac \
@@ -73,7 +115,8 @@ bash dgx/setup_dgx_venv.sh
 ## Visualize A Saved RL Policy
 
 ```bash
-mjpython -m golf_rl.visualize_policy \
+cd /Users/zachhuang/mujoco-test/src/current
+/Users/zachhuang/mujoco-test/.venv/bin/mjpython -m golf_rl.visualize_policy \
   artifacts/trained_models/residual_stage1_local/best_model \
   --env residual \
   --algo sac \
