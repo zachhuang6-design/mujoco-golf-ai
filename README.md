@@ -51,18 +51,40 @@ At a high level, the project explores three questions:
 
 ## Current Starting Point
 
-To view the current working backswing:
+To view the completed kinematics swing:
 
 ```bash
-cd src/current
-mjpython two_arm_chest_full_swing.py --club 7iron --hand right --speed 1
+cd /Users/zachhuang/mujoco-test/src/current
+/Users/zachhuang/mujoco-test/.venv/bin/mjpython two_arm_chest_full_swing.py --club 7iron --hand right --speed 1
+```
+
+To view the current best physics-based two-arm swing policy:
+
+```bash
+cd /Users/zachhuang/mujoco-test/src/current
+/Users/zachhuang/mujoco-test/.venv/bin/mjpython -m golf_rl.visualize_two_arm_joint_policy \
+  artifacts/trained_models_two_arm_joint/best_model \
+  --club 7iron \
+  --hand right \
+  --speed 6
+```
+
+To continue training from that saved best policy:
+
+```bash
+cd /Users/zachhuang/mujoco-test/src/current
+PYTHONDONTWRITEBYTECODE=1 /Users/zachhuang/mujoco-test/.venv/bin/python -m golf_rl.train_two_arm_joint_sac \
+  --club 7iron \
+  --hand right \
+  --timesteps 100000 \
+  --device cpu
 ```
 
 To view a biomechanically accurate one-arm RL-trained swing:
 
 ```bash
-cd src/best_model
-mjpython human_right_arm_biomech_swing.py --club 7iron --hand right
+cd /Users/zachhuang/mujoco-test/src/best_model
+/Users/zachhuang/mujoco-test/.venv/bin/mjpython human_right_arm_biomech_swing.py --club 7iron --hand right
 ```
 
 For the most up-to-date commands and project notes, see:

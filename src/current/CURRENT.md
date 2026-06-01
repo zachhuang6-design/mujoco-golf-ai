@@ -75,6 +75,48 @@ PYTHONDONTWRITEBYTECODE=1 /Users/zachhuang/mujoco-test/.venv/bin/python -m golf_
   --device cpu
 ```
 
+Each training run now saves into its own timestamped folder under
+`artifacts/trained_models_two_arm_joint/`. By default, a new run resumes from
+`artifacts/trained_models_two_arm_joint/best_model`, then promotes the best
+model from the new run back to that same path for the next run.
+
+The current reward judges the strike with one short post-impact launch report
+card instead of relying on full-rollout distance. After impact, training watches
+about 90 simulator steps, scores forward ball speed, straightness, and useful
+height, penalizes sideways velocity/drift, then ends the episode. A run only
+replaces the shared `best_model` if its evaluation score beats the previous
+best score under the current reward version.
+
+SAC now uses lower default exploration for this residual-control stage
+(`--ent-coef 0.03`) and a lower learning rate (`--learning-rate 0.0001`), since
+the policy is meant to make small corrections to an existing swing rather than
+invent a new motion from scratch. No-contact deterministic evaluations are
+penalized explicitly and end near the expected contact window.
+
+To force a brand-new policy instead of continuing from the previous best:
+
+```bash
+cd /Users/zachhuang/mujoco-test/src/current
+PYTHONDONTWRITEBYTECODE=1 /Users/zachhuang/mujoco-test/.venv/bin/python -m golf_rl.train_two_arm_joint_sac \
+  --club 7iron \
+  --hand right \
+  --timesteps 100000 \
+  --device cpu \
+  --fresh
+```
+
+To resume from a specific older run:
+
+```bash
+cd /Users/zachhuang/mujoco-test/src/current
+PYTHONDONTWRITEBYTECODE=1 /Users/zachhuang/mujoco-test/.venv/bin/python -m golf_rl.train_two_arm_joint_sac \
+  --club 7iron \
+  --hand right \
+  --timesteps 100000 \
+  --device cpu \
+  --resume-from artifacts/trained_models_two_arm_joint/name_of_run/best_model
+```
+
 ## Older Residual RL Training
 
 This was the earlier one-arm residual RL path and is kept for reference:

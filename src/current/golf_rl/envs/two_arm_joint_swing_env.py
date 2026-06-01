@@ -88,6 +88,14 @@ class TwoArmJointSwingEnv:
         self.impact_ball_x_velocity = 0.0
         self.impact_ball_lateral_velocity = 0.0
         self.impact_ball_lateral_error = 0.0
+        self.post_impact_window_steps = 90
+        self.no_contact_timeout_step = 700
+        self.post_impact_rewarded = False
+        self.post_impact_peak_ball_x_velocity = 0.0
+        self.post_impact_peak_ball_height = 0.0
+        self.post_impact_max_lateral_velocity = 0.0
+        self.post_impact_max_lateral_error = 0.0
+        self.post_impact_target_line_factor = 0.0
         self.last_reward_terms = {}
 
         self.action_space = spaces.Box(
@@ -132,6 +140,12 @@ class TwoArmJointSwingEnv:
         self.impact_ball_x_velocity = 0.0
         self.impact_ball_lateral_velocity = 0.0
         self.impact_ball_lateral_error = 0.0
+        self.post_impact_rewarded = False
+        self.post_impact_peak_ball_x_velocity = 0.0
+        self.post_impact_peak_ball_height = 0.0
+        self.post_impact_max_lateral_velocity = 0.0
+        self.post_impact_max_lateral_error = 0.0
+        self.post_impact_target_line_factor = 0.0
         self.last_reward_terms = {}
         return self._get_obs(), self._get_info()
 
@@ -161,7 +175,7 @@ class TwoArmJointSwingEnv:
         self.previous_action = action.copy()
         self.last_reward_terms = terms
 
-        terminated = False
+        terminated = bool(terms.get("post_impact_done", 0.0) or terms.get("no_contact_timeout", 0.0))
         truncated = self.step_count >= self.max_steps
         info = self._get_info()
         info.update(terms)
@@ -244,29 +258,100 @@ class TwoArmJointSwingEnv:
             self.impact_ball_lateral_velocity = float(ball_vel[1])
             self.impact_ball_lateral_error = lateral_error
 
+        post_impact_active = (
+            self.impact_happened
+            and self.first_contact_step is not None
+            and 0 <= self.step_count - self.first_contact_step <= self.post_impact_window_steps
+        )
+        post_impact_done = (
+            self.impact_happened
+            and self.first_contact_step is not None
+            and self.step_count - self.first_contact_step > self.post_impact_window_steps
+            and not self.post_impact_rewarded
+        )
+        no_contact_timeout = (
+            not self.impact_happened
+            and self.step_count >= min(self.no_contact_timeout_step, self.max_steps - 1)
+        )
+        if post_impact_active:
+            self.post_impact_peak_ball_x_velocity = max(
+                self.post_impact_peak_ball_x_velocity,
+                max(0.0, ball_x_velocity),
+            )
+            self.post_impact_peak_ball_height = max(
+                self.post_impact_peak_ball_height,
+                max(0.0, ball_height),
+            )
+            self.post_impact_max_lateral_velocity = max(
+                self.post_impact_max_lateral_velocity,
+                abs(float(ball_vel[1])),
+            )
+            self.post_impact_max_lateral_error = max(
+                self.post_impact_max_lateral_error,
+                abs(lateral_error),
+            )
+            post_ratio = self.post_impact_max_lateral_velocity / max(
+                self.post_impact_peak_ball_x_velocity,
+                1.0,
+            )
+            self.post_impact_target_line_factor = float(np.exp(-((post_ratio / 0.16) ** 2)))
+
         near_ball = float(np.exp(-((club_ball_distance / 0.08) ** 2)))
         approach_reward = 8.0 * max(0.0, self.prev_club_ball_distance - club_ball_distance)
         self.prev_club_ball_distance = club_ball_distance
         proximity_reward = 0.08 * near_ball
         speed_reward = 0.04 * near_ball * max(0.0, clubhead_x_velocity)
         peak_speed_reward = 0.0
-        ball_velocity_reward = 12.0 * max(0.0, ball_x_velocity) if first_contact else 0.0
+        ball_velocity_reward = 0.0
         distance_gain = max(0.0, self.max_ball_x_distance - previous_max_distance)
         lateral_ratio = self.max_ball_lateral_abs / max(self.max_ball_x_distance, 1.0)
         target_line_factor = float(np.exp(-((lateral_ratio / 0.18) ** 2)))
-        distance_reward = 220.0 * distance_gain * target_line_factor
-        height_reward = 22.0 * max(0.0, self.max_ball_height - previous_max_height)
+        distance_reward = 0.0
+        height_reward = 0.0
         contact_reward = self.contact_reward_value if first_contact else 0.0
-        impact_speed_reward = 8.0 * max(0.0, clubhead_x_velocity) if first_contact else 0.0
-        forward_contact_reward = (
-            90.0 * max(0.0, ball_x_velocity - 1.25 * abs(float(ball_vel[1])))
-            if first_contact
-            else 0.0
-        )
-        lateral_penalty = 900.0 * max(0.0, self.max_ball_lateral_abs - previous_max_lateral)
-        lateral_velocity_penalty = 85.0 * abs(float(ball_vel[1])) if first_contact else 0.0
+        impact_speed_reward = 2.0 * max(0.0, clubhead_x_velocity) if first_contact else 0.0
+        forward_contact_reward = 0.0
+        post_impact_straight_reward = 0.0
+        post_impact_launch_reward = 0.0
+        post_impact_summary_reward = 0.0
+        post_impact_done_flag = 0.0
+        if post_impact_active:
+            straight_x_velocity = max(0.0, ball_x_velocity - 1.5 * abs(float(ball_vel[1])))
+            forward_contact_reward = 0.25 * straight_x_velocity
+            post_impact_straight_reward = 0.0
+            post_impact_launch_reward = 0.0
+        if post_impact_done:
+            post_impact_done_flag = 1.0
+            self.post_impact_rewarded = True
+            post_ratio = self.post_impact_max_lateral_velocity / max(
+                self.post_impact_peak_ball_x_velocity,
+                1.0,
+            )
+            velocity_line_factor = float(np.exp(-((post_ratio / 0.16) ** 2)))
+            position_line_factor = float(
+                np.exp(-((self.post_impact_max_lateral_error / 0.45) ** 2))
+            )
+            clean_launch_factor = velocity_line_factor * position_line_factor
+            useful_height = min(self.post_impact_peak_ball_height, 1.6)
+            low_launch_penalty = max(0.0, 0.25 - self.post_impact_peak_ball_height)
+            self.post_impact_target_line_factor = clean_launch_factor
+            post_impact_summary_reward = (
+                300.0
+                + 120.0 * self.post_impact_peak_ball_x_velocity
+                + 2200.0 * clean_launch_factor
+                + 520.0 * useful_height
+                - 180.0 * self.post_impact_max_lateral_velocity
+                - 450.0 * self.post_impact_max_lateral_error
+                - 600.0 * low_launch_penalty
+            )
+        lateral_penalty = 0.0
+        lateral_velocity_penalty = 6.0 * abs(float(ball_vel[1])) if post_impact_active else 0.0
         backward_penalty = 120.0 * max(0.0, -ball_x_distance)
-        miss_penalty = 260.0 if self.step_count >= self.max_steps - 1 and not self.impact_happened else 0.0
+        miss_penalty = 0.0
+        if no_contact_timeout:
+            miss_penalty = 3200.0
+        elif self.step_count >= self.max_steps - 1 and not self.impact_happened:
+            miss_penalty = 3200.0
         tracking_penalty = self.tracking_weight * tracking_error
         action_penalty = self.action_weight * action_cost
         smoothness_penalty = self.smoothness_weight * smoothness
@@ -283,6 +368,9 @@ class TwoArmJointSwingEnv:
             + contact_reward
             + impact_speed_reward
             + forward_contact_reward
+            + post_impact_straight_reward
+            + post_impact_launch_reward
+            + post_impact_summary_reward
             - lateral_penalty
             - lateral_velocity_penalty
             - backward_penalty
@@ -315,6 +403,14 @@ class TwoArmJointSwingEnv:
             "impact_ball_x_velocity": self.impact_ball_x_velocity,
             "impact_ball_lateral_velocity": self.impact_ball_lateral_velocity,
             "impact_ball_lateral_error": self.impact_ball_lateral_error,
+            "post_impact_peak_ball_x_velocity": self.post_impact_peak_ball_x_velocity,
+            "post_impact_peak_ball_height": self.post_impact_peak_ball_height,
+            "post_impact_max_lateral_velocity": self.post_impact_max_lateral_velocity,
+            "post_impact_max_lateral_error": self.post_impact_max_lateral_error,
+            "post_impact_target_line_factor": self.post_impact_target_line_factor,
+            "post_impact_window_active": float(post_impact_active),
+            "post_impact_done": post_impact_done_flag,
+            "no_contact_timeout": float(no_contact_timeout),
             "ball_contact_reward": contact_reward,
             "club_ball_distance": club_ball_distance,
             "min_club_ball_distance": float(self.min_club_ball_distance),
@@ -331,6 +427,9 @@ class TwoArmJointSwingEnv:
             "contact_reward": contact_reward,
             "impact_speed_reward": impact_speed_reward,
             "forward_contact_reward": forward_contact_reward,
+            "post_impact_straight_reward": post_impact_straight_reward,
+            "post_impact_launch_reward": post_impact_launch_reward,
+            "post_impact_summary_reward": post_impact_summary_reward,
             "lateral_penalty": lateral_penalty,
             "lateral_velocity_penalty": lateral_velocity_penalty,
             "backward_penalty": backward_penalty,
